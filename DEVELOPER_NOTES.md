@@ -71,13 +71,22 @@ Opens `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.html` i
 
 ---
 
-## HTML Sanitisation Checklist
+## Interaction behaviour and editing guidelines
 
-**When to run this:** Every time the HTML file is re-saved from production (e.g. when new EOI rows are added).
+Most logic that translates a user interaction into an API call lives in `src/editor.js`. When adding or modifying a field type, search for the following patterns:
 
-The saved page embeds several things that must be cleaned up before the local dev environment works correctly. Work through each item below in order.
+- `makeEditable(...)` covers simple text/textarea cells. It injects a textarea plus **Save/Cancel** buttons, and calls `onSave(value, $el)` when the user clicks Save.
+- Dropdowns are always generated server‑side using `makeDropdown` or `makeMultiSelect` (see `server-functions.html`). On page load `editor.js` hides the `<select>`, prepends a clickable `<div class="metadata_option_display">` showing the current selection, and wires up:
+  - click → reveal the select and inject **Save**/**Cancel** buttons, recording the original value
+  - Save → submit the value(s) via `submit(...)` and hide the widget
+  - Cancel or outside click → restore the original value and close without sending
+  - the `submit` helper converts multiple selections to semicolon‑delimited strings as required by the API
+- Date fields (`.edit_area[data-datepicker="true"]`) are wrapped in a `div` that launches a Bootstrap datepicker input when clicked. The picker now also uses explicit **Save/Cancel** buttons (previously blur/auto‑submit). The chosen date is converted to ISO format for server submission.
+- Any new field type should follow the same UX: show a non‑editable label at rest and only commit when the user clicks Save.
 
----
+> **Important:** dropdowns and datepickers previously auto‑saved on `change`; this behaviour was changed in 2026 to avoid accidental updates. The code in `editor.js` assumes no `change` handler submits automatically.
+
+## The rest of this file continues with the HTML sanitisation checklist and other setup instructions.
 
 ### 1. Remove `.download` extensions from asset filenames
 

@@ -55,15 +55,79 @@
     $(document).on("click", ".metadata_option_display", function () {
       var $display = $(this);
       var $select = $display.next("select.metadata_options");
+      // Store original value so Cancel can restore it
+      $select.data("original-val", $select.val());
       $display.hide();
       $select.show();
+      // Inject Save/Cancel buttons
+      if (!$select.next(".metadata_option_actions").length) {
+        var $saveBtn = $(
+          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+        );
+        var $cancelBtn = $(
+          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+        );
+        var $actions = $(
+          '<div class="metadata_option_actions" style="margin-top:4px;display:flex;gap:4px;">',
+        ).append($saveBtn, $cancelBtn);
+        $select.after($actions);
+      }
     });
+
+    $(document).on(
+      "click",
+      ".metadata_option_actions .btn-primary",
+      function (e) {
+        e.stopPropagation();
+        var $actions = $(this).closest(".metadata_option_actions");
+        var $select = $actions.prev("select.metadata_options");
+        var value = $select.prop("multiple")
+          ? $select.val().join(";")
+          : $select.find(":selected").val();
+        var assetid = $select.closest("tr").attr("id");
+        var fieldid = $select.attr("data-metadatafieldid");
+        $actions.remove();
+        $select
+          .prev(".metadata_option_display")
+          .text(getOptionDisplayText($select))
+          .show();
+        $select.hide();
+        submit(value, assetid, fieldid);
+      },
+    );
+
+    $(document).on(
+      "click",
+      ".metadata_option_actions .btn-secondary",
+      function (e) {
+        e.stopPropagation();
+        var $actions = $(this).closest(".metadata_option_actions");
+        var $select = $actions.prev("select.metadata_options");
+        var originalVal = $select.data("original-val");
+        if (originalVal !== undefined) {
+          $select.val(originalVal);
+        }
+        $actions.remove();
+        $select
+          .prev(".metadata_option_display")
+          .text(getOptionDisplayText($select))
+          .show();
+        $select.hide();
+      },
+    );
 
     $(document).on("click", function (e) {
       if ($(e.target).is(".metadata_option_display")) return;
+      if ($(e.target).closest(".metadata_option_actions").length) return;
       if (!$(e.target).closest("select.metadata_options").length) {
         $("select.metadata_options:visible").each(function () {
           var $select = $(this);
+          // Treat outside click as Cancel — restore original value
+          var originalVal = $select.data("original-val");
+          if (originalVal !== undefined) {
+            $select.val(originalVal);
+          }
+          $select.next(".metadata_option_actions").remove();
           $select
             .prev(".metadata_option_display")
             .text(getOptionDisplayText($select))
@@ -171,69 +235,61 @@
         var $input = $('<input type="text" class="form-control">');
         $input.val(currentText);
 
-        // Clear the div and add the input
-        $field.empty().append($input);
+        var $saveBtn = $(
+          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+        );
+        var $cancelBtn = $(
+          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+        );
+        var $actions = $(
+          '<div style="margin-top:4px;display:flex;gap:4px;">',
+        ).append($saveBtn, $cancelBtn);
+
+        // Clear the div and add the input + buttons
+        $field.empty().append($input, $actions);
+
+        // Track what the datepicker has selected (may differ from typed value)
+        var selectedIsoDate = null;
+        var selectedDisplayDate = null;
 
         // Initialize datepicker on the input
         $input.datepicker({
           format: "dd/mm/yyyy",
-          autoclose: true,
+          autoclose: false,
           todayHighlight: true,
           orientation: "bottom auto",
           container: "body",
         });
 
-        // Show the datepicker immediately
         $input.datepicker("show");
         $input.focus();
 
-        // Handle date selection
+        // When a date is chosen in the picker, record it but don't submit yet
         $input.on("changeDate", function (e) {
           if (e.date) {
-            var assetid = $field.closest("tr").attr("id");
-            var fieldid = $field.attr("data-metadatafieldid");
-
-            // Get the date in DD/MM/YYYY format
-            var selectedDateStr = $input.datepicker("getFormattedDate");
-
-            // Convert to ISO format for server
-            var isoDate = australianToIso(selectedDateStr);
-
-            // Update display
-            $input.datepicker("hide");
-            $input.remove();
-            $field.text(selectedDateStr);
-
-            // Submit to server
-            submit(isoDate, assetid, fieldid);
+            selectedDisplayDate = $input.datepicker("getFormattedDate");
+            selectedIsoDate = australianToIso(selectedDisplayDate);
           }
         });
 
-        // Handle blur - cancel editing
-        $input.on("blur", function () {
-          setTimeout(function () {
-            if ($input.parent().length) {
-              $input.datepicker("destroy");
-              $input.remove();
-              $field.text(currentText);
-            }
-          }, 200);
+        $cancelBtn.on("click", function (e) {
+          e.stopPropagation();
+          $input.datepicker("destroy");
+          $field.empty().text(currentText);
+        });
+
+        $saveBtn.on("click", function (e) {
+          e.stopPropagation();
+          // Use picker-selected date if available, otherwise parse typed value
+          var displayDate = selectedDisplayDate || $input.val().trim();
+          var isoDate = selectedIsoDate || australianToIso(displayDate);
+          var assetid = $field.closest("tr").attr("id");
+          var fieldid = $field.attr("data-metadatafieldid");
+          $input.datepicker("destroy");
+          $field.empty().text(displayDate);
+          submit(isoDate, assetid, fieldid);
         });
       });
-    });
-
-    $(document).on("change", ".metadata_options", function () {
-      console.log("I changed");
-
-      var value = $(this).prop("multiple")
-        ? $(this).val().join(";")
-        : $(this).find(":selected").val();
-      var assetid = $(this).closest("tr").attr("id");
-      var fieldid = $(this).attr("data-metadatafieldid");
-
-      submit(value, assetid, fieldid);
-
-      return value;
     });
 
     function submit(content, assetID, fieldid) {
