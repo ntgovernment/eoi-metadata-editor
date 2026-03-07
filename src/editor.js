@@ -255,7 +255,8 @@
         // Initialize datepicker on the input
         $input.datepicker({
           format: "dd/mm/yyyy",
-          autoclose: false,
+          autoclose: true,
+          todayBtn: "linked",
           todayHighlight: true,
           orientation: "bottom auto",
           container: "body",
