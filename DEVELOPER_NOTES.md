@@ -2,33 +2,251 @@
 
 ## Overview
 
-This tool is a browser-based inline editor for Squiz Matrix asset metadata and attributes. It loads as a saved page (`eoi-metadata-editor.htm`) and communicates with the Squiz Matrix backend via the [Squiz Matrix JavaScript API](https://docs.squiz.net/matrix/version/latest/api/javascript-api/index.html).
+This tool is a browser-based inline editor for Squiz Matrix asset metadata and attributes. It is developed locally using Vite as a dev server, serving a saved copy of the production page (`EOI metadata editor _ NTG Central.html`) with local asset files.
+
+Changes to interaction logic are made in `editor.js`, then deployed to the NTG Central Squiz Matrix instance. The HTML page itself is periodically re-saved from production and sanitised using the checklist below.
 
 ---
 
 ## References
 
 - Squiz Matrix JavaScript API: https://docs.squiz.net/matrix/version/latest/api/javascript-api/index.html
+- Bootstrap Datepicker: https://bootstrap-datepicker.readthedocs.io/
 
 ---
 
 ## File Structure
 
-| File                                            | Role                                                                          | Editable?              |
-| ----------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------- |
-| `eoi-metadata-editor.htm`                       | Generated output page — pre-populated with asset rows and field values        | Avoid (see note below) |
-| `row-template.html`                             | Squiz Matrix asset listing row template (source of truth for row HTML)        | Yes                    |
-| `server-functions.html`                         | Squiz Matrix server-side helper functions (`makeDropdown`, `makeMultiSelect`) | Yes                    |
-| `eoi-metadata-editor_files/editor.js`           | Custom interaction logic — event handlers, API calls, UI feedback             | Yes                    |
-| `eoi-metadata-editor_files/update-metadata.js`  | Squiz Matrix JS API library (minified-style)                                  | **Read-only**          |
-| `eoi-metadata-editor_files/jquery-3.4.1.min.js` | jQuery                                                                        | Read-only              |
-| `eoi-metadata-editor_files/jquery.editable.js`  | Jeditable inline-edit plugin                                                  | Read-only              |
-| `eoi-metadata-editor_files/datatables.lib.js`   | DataTables library                                                            | Read-only              |
-| `eoi-metadata-editor_files/bootstrap.min.css`   | Bootstrap CSS                                                                 | Read-only              |
-| `.prettierignore`                               | Prevents Prettier from corrupting Squiz keyword syntax                        | Yes                    |
-| `.vscode/settings.json`                         | Suppresses false VS Code HTML/JS errors in template files                     | Yes                    |
+| File/Directory                                                    | Role                                                                   | Editable?                           |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| `EOI metadata editor _ NTG Central.html`                          | Saved production page — the local dev entry point                      | Sanitise only (see checklist below) |
+| `EOI metadata editor _ NTG Central_files/editor.js`               | Custom interaction logic — event handlers, API calls, UI feedback      | **Yes**                             |
+| `EOI metadata editor _ NTG Central_files/update-metadata.js`      | Squiz Matrix JS API library                                            | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/jquery-3.4.1.min.js`     | jQuery 3.4.1                                                           | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/jquery.editable.js`      | Jeditable inline-edit plugin                                           | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/datatables.lib.js`       | DataTables library                                                     | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/bootstrap.min.css`       | Bootstrap CSS (local copy)                                             | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/bootstrap-datepicker.*`  | Bootstrap Datepicker JS and CSS                                        | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/eoi-metadata-editor.css` | Custom styles for this editor                                          | Yes                                 |
+| `EOI metadata editor _ NTG Central_files/roboto.css`              | Roboto font — replaced with Google Fonts `@import` to avoid CORS       | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/all.css`                 | Font Awesome Pro 5.15.4 CSS (local copy)                               | Read-only                           |
+| `public/webfonts/`                                                | Font Awesome font files served by Vite at `/webfonts/`                 | Read-only                           |
+| `public/cdn/userdata/`                                            | Stub JSON responses for NTG Central user-profile API calls             | Yes (stubs)                         |
+| `row-template.html`                                               | Squiz Matrix asset listing row template (source of truth for row HTML) | Yes                                 |
+| `server-functions.html`                                           | Squiz Matrix server-side helpers (`makeDropdown`, `makeMultiSelect`)   | Yes                                 |
+| `vite.config.js`                                                  | Vite configuration                                                     | Yes                                 |
+| `package.json`                                                    | npm scripts — `dev` starts Vite                                        | Yes                                 |
+| `.prettierignore`                                                 | Prevents Prettier from corrupting Squiz `%keyword%` syntax             | Yes                                 |
+| `.vscode/settings.json`                                           | Suppresses false VS Code HTML/JS errors in Squiz template files        | Yes                                 |
 
-> **Rule:** Edit `row-template.html` and `server-functions.html` for template changes, and `editor.js` for interaction changes. Never modify `update-metadata.js`. Avoid editing `eoi-metadata-editor.htm` directly — it is generated output from the Squiz Matrix asset listing.
+> **Rule:** Edit `row-template.html` and `server-functions.html` for template/field changes, and `editor.js` for interaction changes. Never modify `update-metadata.js`. The saved HTML page is re-fetched from production when rows change; apply the sanitisation checklist below after every refresh.
+
+---
+
+## Local Dev Environment
+
+### Starting the dev server
+
+```bash
+npm run dev
+```
+
+Opens `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.html` in the browser.
+
+### How it works
+
+- Vite serves all files in the project root and `public/` as static assets.
+- The saved HTML page references all assets with relative paths (`./EOI metadata editor _ NTG Central_files/...`), which Vite resolves correctly.
+- `public/webfonts/` contains local Font Awesome font files so `/webfonts/*.woff2` etc. resolve without a network request.
+- `public/cdn/userdata/` contains stub JSON responses so NTG Central user-profile API calls (favourites, display name, user info) return valid empty data instead of 404-ing and throwing `SyntaxError`.
+- `roboto.css` imports Roboto from Google Fonts (CORS-safe) instead of the NTG Central server.
+
+### What doesn't work in local dev (expected)
+
+| Error / Feature                             | Why                                                                                | Impact                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------ |
+| Saving metadata changes                     | `js_api.setMetadata` calls the Squiz Matrix backend — not available at `localhost` | Can't test saves locally       |
+| NTG Central profile/favourites API          | Backend calls to `/cdn/userdata/…` — stubs return empty data                       | Profile panel empty, no errors |
+| `fa-light-300` icons render as solid weight | Font Awesome Light is Pro-only; stub copies the solid font file                    | Visual difference only         |
+
+---
+
+## HTML Sanitisation Checklist
+
+**When to run this:** Every time the HTML file is re-saved from production (e.g. when new EOI rows are added).
+
+The saved page embeds several things that must be cleaned up before the local dev environment works correctly. Work through each item below in order.
+
+---
+
+### 1. Remove `.download` extensions from asset filenames
+
+**Why:** Browsers append `.download` to filenames when the server sends a `Content-Disposition: attachment` header. All references in the HTML must point to the correct local filenames.
+
+**Find:** All occurrences of `.download` in the HTML file.
+
+**Fix:**
+
+- In the HTML, replace every `filename.ext.download` reference with `filename.ext`.
+- In `EOI metadata editor _ NTG Central_files/`, rename any `*.download` files to the correct extension.
+- If a `.download` file is a duplicate of an existing clean file, delete the `.download` version.
+- If a file exists _only_ as `.download` (no clean version), rename it.
+
+**Check:** `grep -c "\.download" "EOI metadata editor _ NTG Central.html"` should output `0`.
+
+---
+
+### 2. Remove the broken `JSON.parse('')` script
+
+**Why:** The production page contains a Squiz Matrix template artefact that outputs an empty string into `JSON.parse()`. This throws `SyntaxError: Unexpected end of JSON input` in the browser console on every page load.
+
+**Find and remove this exact tag** (appears once, in the page body):
+
+```html
+<script>
+  console.log(JSON.parse(""));
+</script>
+```
+
+**Check:** `grep "JSON.parse" "EOI metadata editor _ NTG Central.html"` should return no results.
+
+---
+
+### 3. Fix the Bootstrap CSS integrity attribute
+
+**Why:** The `<link>` for `bootstrap.min.css` carries an `integrity` hash from the CDN version of the file. The local copy has a different hash, so the browser blocks it with a Subresource Integrity failure.
+
+**Find** (approximately line 860):
+
+```html
+<link
+  rel="stylesheet"
+  href="./EOI metadata editor _ NTG Central_files/bootstrap.min.css"
+  integrity="sha384-..."
+  crossorigin="anonymous"
+/>
+```
+
+**Fix:** Remove the `integrity` and `crossorigin` attributes:
+
+```html
+<link
+  rel="stylesheet"
+  href="./EOI metadata editor _ NTG Central_files/bootstrap.min.css"
+/>
+```
+
+---
+
+### 4. Fix the Font Awesome CSS link — remove integrity attribute
+
+**Why:** The saved page carries an `integrity` hash on the local `all.css` link that will fail SRI verification (hash was generated from a different copy of the file).
+
+**Find:**
+
+```html
+<link
+  rel="stylesheet"
+  href="./EOI metadata editor _ NTG Central_files/all.css"
+  integrity="sha384-..."
+  crossorigin="anonymous"
+/>
+```
+
+**Fix:** Remove the `integrity` and `crossorigin` attributes:
+
+```html
+<link
+  rel="stylesheet"
+  href="./EOI metadata editor _ NTG Central_files/all.css"
+/>
+```
+
+> `all.css` uses `../webfonts/` relative paths which resolve to `/webfonts/` at the dev server root. The font files live in `public/webfonts/` and are served by Vite from there.
+
+---
+
+### 5. Wrap `editor.js` in an IIFE
+
+**Why:** The production HTML loads jQuery **three times**:
+
+1. Line ~102 (`<head>`) — for early page scripts
+2. Line ~2029 — immediately before `jquery.editable.js`, `bootstrap-datepicker.min.js`, and `editor.js`
+3. Line ~2212 — with the NTG framework scripts (`auds.js`, `global-v2.js`, etc.)
+
+The third load overwrites the global `$` and `jQuery` with a clean instance that has no plugins. Because `editor.js` uses `$(document).ready(...)`, by the time that callback fires `$` is the plugin-free jQuery#3, so `$.fn.editable` and `$.fn.datepicker` are undefined and all inline editing breaks.
+
+**Fix in `editor.js`:** Wrap the entire file in an IIFE that captures the correct jQuery at script-evaluation time (when jQuery#2 is active and all plugins are registered):
+
+```js
+(function ($) {
+  $(document).ready(function () {
+    // ... all existing code unchanged ...
+  });
+})(jQuery);
+```
+
+**Check:** `head -1 "EOI metadata editor _ NTG Central_files/editor.js"` should output `(function ($) {`.
+
+---
+
+### 6. Fix the deprecated `apple-mobile-web-app-capable` meta tag
+
+**Why:** Generates a browser deprecation warning.
+
+**Find:**
+
+```html
+<meta name="apple-mobile-web-app-capable" content="yes" />
+```
+
+**Fix:**
+
+```html
+<meta name="mobile-web-app-capable" content="yes" />
+```
+
+---
+
+### 7. Remove debug `console.log` statements
+
+**Why:** The production page contains inline scripts that log debug information to the console (e.g. user asset IDs).
+
+**Find and remove** any lines like:
+
+```js
+console.log(userAssetID + "uidtest");
+```
+
+**Check:** `grep "uidtest\|console\.log" "EOI metadata editor _ NTG Central.html"` — review each match and remove development-only logs.
+
+---
+
+### 8. Verify Roboto CSS is using Google Fonts
+
+**Why:** The original `roboto.css` referenced fonts from `ntgcentral-dev.nt.gov.au`, which blocks cross-origin font requests in local dev. It has been replaced with a Google Fonts import, but a re-save from production may overwrite it.
+
+**Check:** The first (and only) line of `EOI metadata editor _ NTG Central_files/roboto.css` should be:
+
+```css
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap");
+```
+
+**Fix (if overwritten):** Replace the entire file content with the single line above.
+
+---
+
+### Post-sanitisation smoke test
+
+After working through the checklist, start the dev server (`npm run dev`) and open the browser console. The following should be **absent**:
+
+- `SyntaxError: Unexpected end of JSON input` (from `JSON.parse('')`)
+- `ERR_BLOCKED_BY_SRI` or blocked stylesheet (Bootstrap / all.css integrity)
+- `$(...).editable is not a function`
+- 404s for `/webfonts/*.woff2` or `/webfonts/*.woff`
+- CORS errors for `ntgcentral-dev.nt.gov.au` fonts
+- The `uidtest` log line
+- `SyntaxError` from `/cdn/userdata/` fetches
 
 ---
 
@@ -38,22 +256,23 @@ Use this sequence for most changes to avoid regressions:
 
 1. Identify whether the change is template, server helper, or interaction logic.
 2. Edit only the source-of-truth file:
-
-- Template row markup: `row-template.html`
-- Select rendering helpers: `server-functions.html`
-- Browser interactions and API calls: `eoi-metadata-editor_files/editor.js`
-
+   - Template row markup → `row-template.html`
+   - Select rendering helpers → `server-functions.html`
+   - Browser interactions and API calls → `EOI metadata editor _ NTG Central_files/editor.js`
 3. If a metadata field is a multi-select, ensure it is rendered with `makeMultiSelect()`.
 4. Confirm `editor.js` submits multi-select values as `;`-joined strings.
-5. Apply the updated template/design in Squiz Matrix and regenerate the listing output.
-6. Validate with a quick smoke test (see "Verification Checklist").
+5. Apply the updated template in Squiz Matrix and regenerate the listing output.
+6. Re-save the HTML from production, run the sanitisation checklist, then validate.
 
 ### Fast Decision Guide
 
-- "Field displays wrong control type" -> `row-template.html`
-- "Options/selected state are wrong for selects" -> `server-functions.html`
-- "Saves are duplicated or payload format is wrong" -> `eoi-metadata-editor_files/editor.js`
-- "Generated HTML looks stale" -> re-publish/regenerate listing output in Squiz Matrix
+| Symptom                                             | File to change                                |
+| --------------------------------------------------- | --------------------------------------------- |
+| Field displays wrong control type                   | `row-template.html`                           |
+| Options or selected state wrong for selects         | `server-functions.html`                       |
+| Saves duplicated or payload format wrong            | `editor.js`                                   |
+| Generated HTML looks stale                          | Re-publish/regenerate listing in Squiz Matrix |
+| Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above     |
 
 ---
 
@@ -97,7 +316,25 @@ Metadata fields are wrapped in `<td class="metadata-editor">`. There are two fie
 - `data-current`: JSON-encoded array of the pre-selected option value(s); used to restore the selection on page load
 - `multiple=""`: present on multi-select fields; absent on single-select fields
 
-Attribute fields (asset name, short name) use `<td class="attribute-editor">` and follow the same `edit_area` + `data-attributename` pattern, updated via `js_api.setAttribute`.
+Attribute fields (asset name, short name) use `<td class="attribute-editor">` with a `data-attributename` attribute, updated via `js_api.setAttribute`.
+
+### jQuery triple-load problem
+
+The production HTML loads jQuery 3.4.1 **three times**:
+
+1. ~line 102 (`<head>`) — needed for early inline scripts in the page body
+2. ~line 2029 — loaded immediately before the plugin scripts and `editor.js`
+3. ~line 2212 — loaded with the NTG framework scripts (`auds.js`, `global-v2.js`, etc.)
+
+Load #3 resets the global `$` and `jQuery` to a clean instance with no plugins. To prevent this from breaking `editor.js`, the **entire file is wrapped in an IIFE** that captures `jQuery` at evaluation time (when load #2 is current):
+
+```js
+(function ($) {
+  $(document).ready(function () { ... });
+}(jQuery));
+```
+
+This is a required invariant. If `editor.js` is ever rewritten without the IIFE wrapper, inline editing will silently break.
 
 ### JS API initialisation (`editor.js`)
 
@@ -150,6 +387,56 @@ js_api.setMetadata({
   dataCallback: result,
 });
 ```
+
+### Closing-date field with datepicker
+
+The closing date (metadata field ID 445509) now uses a Bootstrap
+datepicker instead of a plain textarea. This section helps future
+developers replicate the pattern or troubleshoot issues.
+
+1. **Template markup** — add `data-datepicker="true"` to the
+   `.edit_area` div for the closing date and give it
+   `datepicker-field` class for styling:
+   ```html
+   <td class="metadata-editor">
+     <div
+       class="edit_area datepicker-field"
+       data-metadataFieldID="445509"
+       data-datepicker="true"
+     >
+       %asset_metadata_job.closing-date%
+     </div>
+   </td>
+   ```
+2. **Library files** — include `bootstrap-datepicker.min.js` and
+   `bootstrap-datepicker.min.css` alongside the existing local
+   static assets, and reference them in `eoi-metadata-editor.htm`.
+3. **Interaction logic** (in `editor.js`):
+   - On page load convert any ISO date values to `DD/MM/YYYY` for
+     display.
+   - Add a click handler for `.edit_area[data-datepicker="true"]`
+     that dynamically creates an `<input>` inside the div and
+     initializes the Bootstrap datepicker on that input.
+   - When a date is selected, convert the displayed Australian-format
+     date back to ISO (`YYYY-MM-DD`), submit via
+     `js_api.setMetadata`, then remove the input and restore text.
+   - The datepicker input auto-opens on click and destroys itself on
+     blur or after selection.
+4. **Value formatting** — display is `DD/MM/YYYY` (Australian), but
+   the server always receives `YYYY-MM-DD`. Conversions use helper
+   functions `isoToAustralian` and `australianToIso` defined near the
+   top of `editor.js`.
+5. **Refresh handling** — when the AJAX callback updates the table
+   cell, the code simply rewrites the text (no persistent datepicker
+   exists), converting the payload back to display format if needed.
+
+> Note: the datepicker works only on inputs; the original implementation
+> attempted to initialize it on `<div>` elements which failed silently.
+> The current pattern wraps an input only during editing, ensuring the
+> picker appears correctly.
+
+This solution keeps the general editing framework unchanged while
+providing a polished calendar UI for dates.
 
 ---
 
@@ -232,6 +519,21 @@ Single-select fields were unaffected — `$(this).find(":selected").val()` alrea
 ---
 
 ## Change log
+
+### 2026-03-07: Local dev environment setup and HTML sanitisation
+
+- Re-saved the production page as `EOI metadata editor _ NTG Central.html` (replacing `eoi-metadata-editor.htm`).
+- Removed all `.download` suffix references from the HTML and renamed/deleted `.download` files in the assets directory.
+- Updated `package.json` `dev` script to serve the new HTML filename via Vite.
+- Removed broken `JSON.parse('')` Squiz template artefact from the HTML.
+- Removed `integrity`/`crossorigin` attributes from `bootstrap.min.css` and `all.css` links (local copies don't match CDN hashes).
+- Wrapped `editor.js` in an IIFE to capture jQuery#2 (with plugins) before jQuery#3 overwrites the global.
+- Replaced `roboto.css` with a Google Fonts `@import` to fix Roboto CORS errors.
+- Added `public/webfonts/` with `fa-solid-900` font files (downloaded from jsDelivr) and `fa-light-300` stubs.
+- Added `public/cdn/userdata/` stub JSON files to silence NTG Central userdata API errors.
+- Fixed duplicate Designation display div bug in `editor.js` (HTML was saved after editor.js had already injected display divs; re-running created doubles).
+- Replaced deprecated `apple-mobile-web-app-capable` meta tag with `mobile-web-app-capable`.
+- Removed debug `console.log(userAssetID + 'uidtest')` from inline script.
 
 ### 2026-03-07: NTG Central / intranets switched to multi-select
 
@@ -374,7 +676,7 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 3. **Multi-select values must be semicolon-joined** before being passed to `setMetadata` — jQuery's `.val()` returns an array for multi-selects; the Squiz Matrix API requires a `;`-delimited string.
 4. **`data-current` stores a JSON array** for multi-select fields — use `JSON.parse()` to restore selections on page load, with a plain-string fallback for single-select fields.
 5. **The nonce token** is read from `<input type="hidden" id="token">` on the page — this is injected by Squiz Matrix and required for all API write operations.
-6. **The `.htm` file is generated output** — edit `row-template.html` and `server-functions.html` (and apply changes in the Squiz Matrix asset listing), not the saved `.htm` file. The `makeDropdown` and `makeMultiSelect` helper functions live in the page design of asset `#911527`.
+6. **The HTML page is a saved production page** — edit `row-template.html` and `server-functions.html` (and apply changes in the Squiz Matrix asset listing), not the saved HTML directly. The `makeDropdown` and `makeMultiSelect` helper functions live in the page design of asset `#911527`. After re-saving from production, run the HTML Sanitisation Checklist.
 7. **Never format Squiz template files** — `row-template.html`, `server-functions.html`, and `eoi-metadata-editor.htm` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
 
 ---
@@ -391,7 +693,7 @@ Run this after any metadata field or select-control change:
 
 ## Common Pitfalls
 
-- Editing `eoi-metadata-editor.htm` directly: changes will be overwritten by regeneration.
+- Editing the saved HTML page directly: content changes will be overwritten when next re-saved from production. Only sanitisation changes (see checklist) are appropriate.
 - Using `makeDropdown()` for a multi-select field: preselection and payload behavior will be incorrect.
 - Formatting template files with generic formatters: Squiz keywords become invalid.
 - Attaching delegated handlers to `.metadata-editor` instead of `$(document)`: causes duplicate submissions.
