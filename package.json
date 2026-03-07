@@ -1,0 +1,10 @@
+{
+  "name": "eoi-metadata-editor",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite --open /eoi-metadata-editor.htm"
+  },
+  "devDependencies": {
+    "vite": "^6.2.1"
+  }
+}

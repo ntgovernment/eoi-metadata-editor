@@ -1,0 +1,26 @@
+{
+  // Disable VS Code's built-in HTML script/style validation for files that
+  // contain Squiz Matrix server-side syntax (%keyword% expressions). These
+  // are not valid JavaScript and would otherwise produce false errors.
+  "html.validate.scripts": false,
+  "html.validate.styles": false,
+
+  // Suppress "unknown at-rule" and similar CSS warnings that can appear
+  // when % keywords land inside style attributes.
+  "css.lint.unknownAtRules": "ignore",
+
+  // Associate the Squiz template files with "html" but tell VS Code not to
+  // attempt JavaScript diagnostics inside their <script runat="server"> blocks.
+  "files.associations": {
+    "row-template.html": "html",
+    "server-functions.html": "html"
+  },
+
+  // Prevent format-on-save for the Squiz template files and the generated
+  // output file. Prettier (or any other formatter) will corrupt %keyword%
+  // expressions by inserting spaces around % ^ : operators.
+  "[html]": {
+    "editor.formatOnSave": false,
+    "editor.defaultFormatter": null
+  }
+}

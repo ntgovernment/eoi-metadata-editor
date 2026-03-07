@@ -1,0 +1,106 @@
+<!--TYPE FORMAT / DEFAULT FORMAT-->
+
+<tr id="%asset_assetid%" data-status="%asset_status_description%">
+
+    <!--@@ ID @@-->
+    <td class="bg-%asset_metadata_status%">
+        <a href="./?a=%asset_assetid%/_admin" target="_blank">%asset_assetid%</a>
+    </td>
+
+    <!--@@ Status @@-->
+    <td style="background-color:%asset_status_colour%">
+        %asset_status_description%
+    </td>
+
+    <!--@@ File Name @@-->
+    <td class="attribute-editor">
+        <div class="edit_area" data-attributename="name">%asset_name%</div>
+    </td>
+
+    <!--@@ Title @@-->
+    <td class="attribute-editor">
+        <div class="edit_area" data-attributename="short_name">%asset_short_name%</div>
+    </td>
+
+    <!--@@ Position title @@-->
+    <td class="metadata-editor">
+        <div class="edit_area" data-metadataFieldID="445504">%asset_metadata_job.title%</div>
+    </td>
+
+    <!--@@ Designation @@-->
+    <td class="metadata-editor">
+        <script runat="server">
+
+            //SET THESE TWO VARIABLES
+            var metadatafield = %globals_asset_assetid:445634^as_asset:asset_data%;
+            var currentvalue = "%asset_metadata_job.designation%";
+
+            //... creates a multi-select field based on metadata information - see global function in #911527
+            print(makeMultiSelect(metadatafield, currentvalue));
+            print(`<span class="d-none">${currentvalue}</span>`);
+
+        </script>
+    </td>
+
+    <!--@@ Close date @@-->
+    <td class="metadata-editor">
+        <div class="edit_area" data-metadataFieldID="445509">%asset_metadata_job.closing-date%</div>
+    </td>
+
+    <!--@@ Duration @@-->
+    <td class="metadata-editor">
+        <div class="edit_area" data-metadataFieldID="445506">%asset_metadata_job.duration%</div>
+    </td>
+
+    <!--@@ Agency @@-->
+    <td class="metadata-editor">
+        <script runat="server">
+
+            //SET THESE TWO VARIABLES
+            var metadatafield = %globals_asset_assetid:445640^as_asset:asset_data%;
+            var currentvalue = "%asset_metadata_job.agency%";
+
+            //... creates a dropdown field based on metadata information - see global function in #911527
+            print(makeDropdown(metadatafield, currentvalue));
+            print(`<span class="d-none">${currentvalue}</span>`);
+
+        </script>
+    </td>
+
+    <!--@@ Location @@-->
+    <td class="metadata-editor">
+
+        <script runat="server">
+
+            //SET THESE TWO VARIABLES
+            var metadatafield = %globals_asset_assetid:445518^as_asset:asset_data%;
+            var currentvalue = "%asset_metadata_job.location%";
+            //print(currentvalue);
+
+            //... creates a multi-select field based on metadata information - see global function in #911527
+            print(makeMultiSelect(metadatafield, currentvalue));
+            print(`<span class="d-none">${currentvalue}</span>`);
+
+        </script>
+
+    </td>
+
+    <!--@@ NTG Central and/or agency intranets @@-->
+    <td class="metadata-editor">
+
+        <script runat="server">
+
+            //SET THESE TWO VARIABLES
+            var metadatafield = %globals_asset_assetid:446182^as_asset:asset_data%;
+            var currentvalue = "%asset_metadata_job.advertise%";
+            //print(currentvalue);
+
+            //... creates a dropdown field based on metadata information - see global function in #911527
+            print(makeDropdown(metadatafield, currentvalue));
+            print(`<span class="d-none">${currentvalue}</span>`);
+
+        </script>
+
+    </td>
+
+</tr>

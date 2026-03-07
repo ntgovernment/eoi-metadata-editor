@@ -1,0 +1,72 @@
+<!--@@ SERVER SIDE (BEFORE PAGE LOADS) FUNCTIONS @@-->
+<script runat="server">
+
+    function makeDropdown(data, currentvalue) {
+
+        if (!data.hasOwnProperty('attributes')) {
+            return '';
+        }
+
+        var options = data.attributes.select_options.value;
+        var optionKeys = Object.keys(options);
+        var optionsList = [];
+        var currentLower = String(currentvalue).toLowerCase().trim();
+        var matchedKey = '';
+
+        Object.keys(options).forEach(function (key) {
+            var keyLower = String(key).toLowerCase();
+            var labelLower = String(options[key]).toLowerCase();
+            var isSelected = (keyLower === currentLower || labelLower === currentLower);
+            if (isSelected && !matchedKey) { matchedKey = key; }
+            optionsList.push('<option value="' + key + '"' + (isSelected ? ' selected' : '') + '>' + options[key] + '</option>');
+        });
+
+        return '<select class="metadata_options"' +
+            ' data-metadataFieldid="' + metadatafield.assetid + '"' +
+            ' data-current="' + (matchedKey || currentvalue) + '">' +
+            '<option value=""></option>' +
+            optionsList.join('') +
+            '</select>';
+    }
+
+    function makeMultiSelect(data, currentvalues) {
+
+        if (!data.hasOwnProperty('attributes')) {
+            return '';
+        }
+
+        var selectOptions = data.attributes.select_options;
+        if (!selectOptions || !selectOptions.value) {
+            return '';
+        }
+
+        var options = selectOptions.value;
+        var rawSelected = Array.isArray(currentvalues)
+            ? currentvalues
+            : (currentvalues ? String(currentvalues).split(';').map(function (v) { return v.trim(); }) : []);
+
+        // Lowercase the incoming values for case-insensitive matching
+        var rawSelectedLower = rawSelected.map(function (v) { return String(v).toLowerCase(); });
+
+        var matchedKeys = [];
+        var optionsList = [];
+
+        Object.keys(options).forEach(function (key) {
+            var keyLower = String(key).toLowerCase();
+            var labelLower = String(options[key]).toLowerCase();
+            // Match against key OR label, both case-insensitively
+            var isSelected = (rawSelectedLower.indexOf(keyLower) !== -1 || rawSelectedLower.indexOf(labelLower) !== -1);
+            if (isSelected) { matchedKeys.push(key); }
+            var label = String(options[key]).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var safeKey = String(key).replace(/"/g, '&quot;');
+            optionsList.push('<option value="' + safeKey + '"' + (isSelected ? ' selected' : '') + '>' + label + '</option>');
+        });
+
+        return '<select multiple class="metadata_options"' +
+            ' data-metadataFieldid="' + metadatafield.assetid + '"' +
+            ' data-current="' + JSON.stringify(matchedKeys).replace(/"/g, '&quot;') + '">' +
+            optionsList.join('') +
+            '</select>';
+    }
+
+</script>
