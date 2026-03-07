@@ -61,7 +61,8 @@ $(document).ready(function () {
     }
   });
 
-  $(".metadata-editor .edit_area").editable(
+  // Metadata editors: exclude datepicker fields from Jeditable
+  $(".metadata-editor .edit_area:not([data-datepicker='true'])").editable(
     function (value, settings) {
       return value;
     },
@@ -69,6 +70,103 @@ $(document).ready(function () {
       type: "textarea",
     },
   );
+
+  // Helper functions for date conversion
+  function isoToAustralian(isoDate) {
+    if (!isoDate || isoDate === "") return "";
+    // Handle both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS formats
+    var datePart = isoDate.split(" ")[0];
+    var parts = datePart.split("-");
+    if (parts.length === 3) {
+      return parts[2] + "/" + parts[1] + "/" + parts[0]; // DD/MM/YYYY
+    }
+    return isoDate; // Return original if not in expected format
+  }
+
+  function australianToIso(ausDate) {
+    if (!ausDate || ausDate === "") return "";
+    var parts = ausDate.split("/");
+    if (parts.length === 3) {
+      return parts[2] + "-" + parts[1] + "-" + parts[0]; // YYYY-MM-DD
+    }
+    return ausDate; // Return original if not in expected format
+  }
+
+  // Initialize Bootstrap Datepicker for closing date fields
+  $(".edit_area[data-datepicker='true']").each(function () {
+    var $field = $(this);
+    var currentValue = $field.text().trim();
+
+    // Convert ISO date to Australian format for display
+    var displayValue = isoToAustralian(currentValue);
+    $field.text(displayValue);
+
+    // Store original styling
+    $field.css({
+      cursor: "pointer",
+      minHeight: "1em",
+    });
+
+    // Click handler to show datepicker input
+    $field.on("click", function () {
+      if ($field.find("input").length > 0) return; // Already editing
+
+      var currentText = $field.text().trim();
+
+      // Create input element
+      var $input = $('<input type="text" class="form-control">');
+      $input.val(currentText);
+
+      // Clear the div and add the input
+      $field.empty().append($input);
+
+      // Initialize datepicker on the input
+      $input.datepicker({
+        format: "dd/mm/yyyy",
+        autoclose: true,
+        todayHighlight: true,
+        orientation: "bottom auto",
+        container: "body",
+      });
+
+      // Show the datepicker immediately
+      $input.datepicker("show");
+      $input.focus();
+
+      // Handle date selection
+      $input.on("changeDate", function (e) {
+        if (e.date) {
+          var assetid = $field.closest("tr").attr("id");
+          var fieldid = $field.attr("data-metadatafieldid");
+
+          // Get the date in DD/MM/YYYY format
+          var selectedDateStr = $input.datepicker("getFormattedDate");
+
+          // Convert to ISO format for server
+          var isoDate = australianToIso(selectedDateStr);
+
+          // Update display
+          $input.datepicker("hide");
+          $input.remove();
+          $field.text(selectedDateStr);
+
+          // Submit to server
+          submit(isoDate, assetid, fieldid);
+        }
+      });
+
+      // Handle blur - cancel editing
+      $input.on("blur", function () {
+        setTimeout(function () {
+          if ($input.parent().length) {
+            $input.datepicker("destroy");
+            $input.remove();
+            $field.text(currentText);
+          }
+        }, 200);
+      });
+    });
+  });
 
   $(document).on("blur", ".edit_area textarea", function () {
     var value = $(this).val();
@@ -114,10 +212,18 @@ $(document).ready(function () {
   function refreshTableCell(data) {
     var updatedData = data.changes[0];
 
-    $(".metadata-editor table")
+    var $cell = $(".metadata-editor table")
       .find("tr[id=" + updatedData.assetid + "]")
-      .find(".edit_area[data-metadatafieldid=" + updatedData.fieldid + "]")
-      .text(updatedData.value);
+      .find(".edit_area[data-metadatafieldid=" + updatedData.fieldid + "]");
+
+    // Check if this is a datepicker field
+    if ($cell.attr("data-datepicker") === "true") {
+      // Convert ISO date to Australian format
+      var displayValue = isoToAustralian(updatedData.value);
+      $cell.text(displayValue);
+    } else {
+      $cell.text(updatedData.value);
+    }
 
     return;
   }
