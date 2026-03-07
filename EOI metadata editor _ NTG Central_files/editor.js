@@ -1,10 +1,13 @@
 (function ($) {
-  $(document).ready(function () {
-    //JS API
-    var options = new Array();
-    options["key"] = "9772315187";
-    var js_api = new Squiz_Matrix_API(options);
+  // Capture Squiz_Matrix_API at script-evaluation time (HTML ~line 2031).
+  // ntg-central-update-user-profile.js (HTML ~line 2216) overwrites
+  // window.Squiz_Matrix_API with a trimmed version that has no setAttribute.
+  // Creating js_api here preserves the full update-metadata.js prototype.
+  var apiOptions = new Array();
+  apiOptions["key"] = "9772315187";
+  var js_api = new Squiz_Matrix_API(apiOptions);
 
+  $(document).ready(function () {
     //Default selections
     $(".metadata_options").each(function () {
       var presetValue = $(this).attr("data-current");
@@ -70,13 +73,53 @@
       }
     });
 
-    // Metadata editors: exclude datepicker fields from Jeditable
-    $(".metadata-editor .edit_area:not([data-datepicker='true'])").editable(
-      function (value, settings) {
-        return value;
-      },
-      {
-        type: "textarea",
+    // Inline click-to-edit: replaces Jeditable dependency.
+    // onSave(value, $el) is called when the user clicks Save.
+    function makeEditable($elems, onSave) {
+      $elems.css({ cursor: "pointer", minHeight: "1em" });
+      $elems.on("click.inlineEdit", function () {
+        var $el = $(this);
+        if ($el.find("textarea").length) return; // already editing
+        var savedText = $el.text().trim();
+
+        var $textarea = $('<textarea class="form-control" rows="2">').val(
+          savedText,
+        );
+        var $saveBtn = $(
+          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+        );
+        var $cancelBtn = $(
+          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+        );
+        var $actions = $(
+          '<div style="margin-top:4px;display:flex;gap:4px;">',
+        ).append($saveBtn, $cancelBtn);
+
+        $el.empty().append($textarea, $actions);
+        $textarea.focus();
+
+        $cancelBtn.on("click", function () {
+          $el.empty().text(savedText);
+        });
+
+        $saveBtn.on("click", function () {
+          onSave($textarea.val(), $el);
+        });
+
+        $textarea.on("keydown.inlineEdit", function (e) {
+          if (e.keyCode === 27) {
+            $el.empty().text(savedText);
+          }
+        });
+      });
+    }
+
+    makeEditable(
+      $(".metadata-editor .edit_area:not([data-datepicker='true'])"),
+      function (value, $el) {
+        var assetid = $el.closest("tr").attr("id");
+        var fieldid = $el.attr("data-metadatafieldid");
+        submit(value, assetid, fieldid);
       },
     );
 
@@ -177,15 +220,6 @@
       });
     });
 
-    $(document).on("blur", ".edit_area textarea", function () {
-      var value = $(this).val();
-      var assetid = $(this).closest("tr").attr("id");
-      var fieldid = $(this).closest(".edit_area").attr("data-metadatafieldid");
-
-      submit(value, assetid, fieldid);
-      return value;
-    });
-
     $(document).on("change", ".metadata_options", function () {
       console.log("I changed");
 
@@ -219,11 +253,12 @@
     }
 
     function refreshTableCell(data) {
+      if (!data.changes || !data.changes[0]) return;
       var updatedData = data.changes[0];
 
-      var $cell = $(".metadata-editor table")
-        .find("tr[id=" + updatedData.assetid + "]")
-        .find(".edit_area[data-metadatafieldid=" + updatedData.fieldid + "]");
+      var $cell = $('tr[id="' + updatedData.assetid + '"]').find(
+        '.edit_area[data-metadatafieldid="' + updatedData.fieldid + '"]',
+      );
 
       // Check if this is a datepicker field
       if ($cell.attr("data-datepicker") === "true") {
@@ -249,28 +284,13 @@
 
     var transaction = {};
 
-    $(".attribute-editor .edit_area").editable(
-      function (value, settings) {
-        return value;
-      },
-      {
-        type: "textarea",
-      },
-    );
-
-    $(".attribute-editor .edit_area").on("blur", "textarea", function () {
+    makeEditable($(".attribute-editor .edit_area"), function (value, $el) {
       transaction = {
-        attrValue: $(this).val(),
-        assetid: $(this).closest("tr").attr("id"),
-        attrName: $(this)
-          .closest(".attribute-editor .edit_area")
-          .attr("data-attributename"),
+        attrValue: value,
+        assetid: $el.closest("tr").attr("id"),
+        attrName: $el.attr("data-attributename"),
       };
-
-      $(this)
-        .closest(".edit_area")
-        .attr("data-newvalue", transaction.attrValue)
-        .addClass("pending");
+      $el.attr("data-newvalue", value).addClass("pending");
       submitAttr(transaction);
     });
 
@@ -280,34 +300,38 @@
         attr_name: transaction.attrName,
         attr_val: transaction.attrValue,
         dataCallback: resultAttr,
+        errorCallback: function () {
+          displayResultAttr("Save failed \u2014 please try again.", "error");
+          $('tr[id="' + transaction.assetid + '"]')
+            .find(
+              '.edit_area[data-attributename="' + transaction.attrName + '"]',
+            )
+            .removeClass("pending");
+        },
       });
     }
 
     function resultAttr(data) {
-      var resultString = data[0];
-
-      if (resultString.indexOf("successfully set") !== -1) {
-        displayResultAttr(resultString, "success");
+      if (Array.isArray(data) && data[0].indexOf("successfully set") !== -1) {
+        displayResultAttr(data[0], "success");
         refreshTableCellsAttr("success");
-      } else if (data[0].indexOf("error") !== -1) {
-        displayResultAttr(data[0], "error");
-        refreshTableCellsAttr("error");
+      } else {
+        var msg = Array.isArray(data)
+          ? data[0]
+          : data.error || "An error occurred.";
+        displayResultAttr(msg, "error");
+        $('tr[id="' + transaction.assetid + '"]')
+          .find('.edit_area[data-attributename="' + transaction.attrName + '"]')
+          .removeClass("pending");
       }
-
-      return;
     }
 
     function refreshTableCellsAttr(cls) {
-      console.log(transaction);
-
-      $(".attribute-editor table")
-        .find('tr[id="' + transaction.assetid + '"]')
+      $('tr[id="' + transaction.assetid + '"]')
         .find('.edit_area[data-attributename="' + transaction.attrName + '"]')
         .removeClass("pending")
         .addClass(cls)
         .text(transaction.attrValue);
-
-      //return;
     }
 
     function displayResultAttr(msg, status) {

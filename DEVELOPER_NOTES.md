@@ -23,7 +23,7 @@ Changes to interaction logic are made in `editor.js`, then deployed to the NTG C
 | `EOI metadata editor _ NTG Central_files/editor.js`               | Custom interaction logic — event handlers, API calls, UI feedback      | **Yes**                             |
 | `EOI metadata editor _ NTG Central_files/update-metadata.js`      | Squiz Matrix JS API library                                            | Read-only                           |
 | `EOI metadata editor _ NTG Central_files/jquery-3.4.1.min.js`     | jQuery 3.4.1                                                           | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/jquery.editable.js`      | Jeditable inline-edit plugin                                           | Read-only                           |
+| `EOI metadata editor _ NTG Central_files/jquery.editable.js`      | Jeditable inline-edit plugin — no longer used; kept as local copy only | Read-only                           |
 | `EOI metadata editor _ NTG Central_files/datatables.lib.js`       | DataTables library                                                     | Read-only                           |
 | `EOI metadata editor _ NTG Central_files/bootstrap.min.css`       | Bootstrap CSS (local copy)                                             | Read-only                           |
 | `EOI metadata editor _ NTG Central_files/bootstrap-datepicker.*`  | Bootstrap Datepicker JS and CSS                                        | Read-only                           |
@@ -190,6 +190,29 @@ The third load overwrites the global `$` and `jQuery` with a clean instance that
 
 ---
 
+### 5.1 JavaScript API instantiation timing
+
+**Why:** Another subtle script-order issue caused the `js_api.setAttribute is not a function` error. The NTG Central framework file `ntg-central-update-user-profile.js` (included after `editor.js` at line ~2216) re‑defines `window.Squiz_Matrix_API` with a pared‑down implementation that only exposes `setMetadata` and `setMetadataAllFields`. Any `Squiz_Matrix_API` instances created after that point will lack `setAttribute` and similar methods.
+
+**Fix in `editor.js`:** instantiate the API object as soon as the IIFE runs, _before_ jQuery's ready handler, so it captures the full prototype supplied by `update-metadata.js`.
+
+```js
+(function ($) {
+  // create before framework scripts run
+  var apiOptions = [];
+  apiOptions.key = "9772315187";
+  var js_api = new Squiz_Matrix_API(apiOptions);
+
+  $(document).ready(function () {
+    // rest of the code may freely use js_api
+  });
+})(jQuery);
+```
+
+The earlier section on the IIFE already ensures the correct jQuery instance is used; this additional step guarantees the correct JS API instance.
+
+---
+
 ### 6. Fix the deprecated `apple-mobile-web-app-capable` meta tag
 
 **Why:** Generates a browser deprecation warning.
@@ -288,7 +311,7 @@ Each asset is a `<tr>` with the asset ID as its `id` attribute:
 
 Metadata fields are wrapped in `<td class="metadata-editor">`. There are two field types:
 
-**Free-text field** — uses `jquery.editable.js` for inline editing:
+**Free-text field** — click-to-edit via the `makeEditable()` helper in `editor.js` (no external plugin):
 
 ```html
 <td class="metadata-editor">
