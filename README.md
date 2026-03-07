@@ -5,13 +5,14 @@ EOI metadata editor is a lightweight web tool for managing asset metadata via ed
 The editor supports:
 
 - **Inline text editing** for attributes and metadata (click a field → textarea appears)
-- **Single‑select and multi‑select dropdowns**, with a custom display div and **Save/Cancel buttons** for deliberate commits
+- **Single‑select dropdowns and enhanced multi‑selects**. Multi‑selects no longer use the native `<select multiple>` control; instead clicking the value display opens a floating checkbox panel. Each item toggles with a click (no Ctrl/Cmd key required). Save/Cancel buttons commit or revert the change. Values in the display box are shown one per line.
 - **Bootstrap datepicker** fields (configured with autoclose, today button, and linked behavior) that provide Save/Cancel actions
 - Automatic coercion of multi‑select values to semicolon‑delimited strings before submission
 
 All interactive logic lives in `src/editor.js`; when you need to adjust behavior (e.g. add a new field type, tweak datepicker options, or change how a control submits), edit that file and rebuild. The datepicker initialization specifically lives around line 256 and can be customized via its options object.
 
 For datepicker tweaks:
+
 1. `autoclose` – set to `true` to close after a selection.
 2. `todayBtn` – values `true` (view navigation) or `"linked"` (select today and close).
 3. `todayHighlight` – highlights today's date in the calendar.

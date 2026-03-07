@@ -29,7 +29,7 @@
           return $(this).text();
         })
         .get()
-        .join(", ");
+        .join("\n");
 
       return labels || "\u00a0";
     }
@@ -54,24 +54,39 @@
 
     $(document).on("click", ".metadata_option_display", function () {
       var $display = $(this);
-      var $select = $display.next("select.metadata_options");
+      var $select = $display.nextAll("select.metadata_options").first();
       // Store original value so Cancel can restore it
-      $select.data("original-val", $select.val());
+      var currentVal = $select.val();
+      $select.data(
+        "original-val",
+        Array.isArray(currentVal) ? currentVal.slice() : currentVal,
+      );
       $display.hide();
-      $select.show();
-      // Inject Save/Cancel buttons
-      if (!$select.next(".metadata_option_actions").length) {
-        var $saveBtn = $(
-          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+      // Build a fresh checkbox dropdown on each open
+      var $list = $('<div class="multiselect-list"></div>');
+      $select.find("option").each(function () {
+        var $cb = $("<input type='checkbox'/>")
+          .val($(this).val())
+          .prop("checked", $(this).is(":selected"));
+        var $label = $("<label></label>").append(
+          $cb,
+          document.createTextNode("\u00a0" + $(this).text()),
         );
-        var $cancelBtn = $(
-          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
-        );
-        var $actions = $(
-          '<div class="metadata_option_actions" style="margin-top:4px;display:flex;gap:4px;">',
-        ).append($saveBtn, $cancelBtn);
-        $select.after($actions);
-      }
+        $list.append($label);
+      });
+      var $saveBtn = $(
+        '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+      );
+      var $cancelBtn = $(
+        '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+      );
+      var $actions = $('<div class="metadata_option_actions"></div>').append(
+        $saveBtn,
+        $cancelBtn,
+      );
+      $display.after(
+        $('<div class="multiselect-dropdown"></div>').append($list, $actions),
+      );
     });
 
     $(document).on(
@@ -79,19 +94,22 @@
       ".metadata_option_actions .btn-primary",
       function (e) {
         e.stopPropagation();
-        var $actions = $(this).closest(".metadata_option_actions");
-        var $select = $actions.prev("select.metadata_options");
-        var value = $select.prop("multiple")
-          ? $select.val().join(";")
-          : $select.find(":selected").val();
+        var $dropdown = $(this).closest(".multiselect-dropdown");
+        if (!$dropdown.length) return;
+        var $display = $dropdown.prev(".metadata_option_display");
+        var $select = $dropdown.next("select.metadata_options");
+        var checkedVals = $dropdown
+          .find("input[type=checkbox]:checked")
+          .map(function () {
+            return $(this).val();
+          })
+          .get();
+        $select.val(checkedVals);
+        var value = $select.val() ? $select.val().join(";") : "";
         var assetid = $select.closest("tr").attr("id");
         var fieldid = $select.attr("data-metadatafieldid");
-        $actions.remove();
-        $select
-          .prev(".metadata_option_display")
-          .text(getOptionDisplayText($select))
-          .show();
-        $select.hide();
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
         submit(value, assetid, fieldid);
       },
     );
@@ -101,40 +119,37 @@
       ".metadata_option_actions .btn-secondary",
       function (e) {
         e.stopPropagation();
-        var $actions = $(this).closest(".metadata_option_actions");
-        var $select = $actions.prev("select.metadata_options");
+        var $dropdown = $(this).closest(".multiselect-dropdown");
+        if (!$dropdown.length) return;
+        var $display = $dropdown.prev(".metadata_option_display");
+        var $select = $dropdown.next("select.metadata_options");
         var originalVal = $select.data("original-val");
         if (originalVal !== undefined) {
           $select.val(originalVal);
         }
-        $actions.remove();
-        $select
-          .prev(".metadata_option_display")
-          .text(getOptionDisplayText($select))
-          .show();
-        $select.hide();
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
       },
     );
 
     $(document).on("click", function (e) {
-      if ($(e.target).is(".metadata_option_display")) return;
-      if ($(e.target).closest(".metadata_option_actions").length) return;
-      if (!$(e.target).closest("select.metadata_options").length) {
-        $("select.metadata_options:visible").each(function () {
-          var $select = $(this);
-          // Treat outside click as Cancel — restore original value
-          var originalVal = $select.data("original-val");
-          if (originalVal !== undefined) {
-            $select.val(originalVal);
-          }
-          $select.next(".metadata_option_actions").remove();
-          $select
-            .prev(".metadata_option_display")
-            .text(getOptionDisplayText($select))
-            .show();
-          $select.hide();
-        });
-      }
+      if (
+        $(e.target).closest(".metadata_option_display, .multiselect-dropdown")
+          .length
+      )
+        return;
+      $(".multiselect-dropdown").each(function () {
+        var $dropdown = $(this);
+        var $display = $dropdown.prev(".metadata_option_display");
+        var $select = $dropdown.next("select.metadata_options");
+        // Treat outside click as Cancel — restore original value
+        var originalVal = $select.data("original-val");
+        if (originalVal !== undefined) {
+          $select.val(originalVal);
+        }
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
+      });
     });
 
     // Inline click-to-edit: replaces Jeditable dependency.

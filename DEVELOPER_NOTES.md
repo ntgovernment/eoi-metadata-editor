@@ -77,11 +77,14 @@ Most logic that translates a user interaction into an API call lives in `src/edi
 
 - `makeEditable(...)` covers simple text/textarea cells. It injects a textarea plus **Save/Cancel** buttons, and calls `onSave(value, $el)` when the user clicks Save.
 - Dropdowns are always generated server‑side using `makeDropdown` or `makeMultiSelect` (see `server-functions.html`). On page load `editor.js` hides the `<select>`, prepends a clickable `<div class="metadata_option_display">` showing the current selection, and wires up:
-  - click → reveal the select and inject **Save**/**Cancel** buttons, recording the original value
-  - Save → submit the value(s) via `submit(...)` and hide the widget
+  - click → open either the native `<select>` (single‑select) or a custom checkbox panel (multi‑select) and inject **Save**/**Cancel** buttons, recording the original value
+  - Save → for multi‑selects the checkbox panel state is written back to the hidden `<select>`; `submit(...)` is then called and the `metadata_option_display` text refreshed. Multi‑select displays now use newline‑separated labels so each item appears on its own line.
   - Cancel or outside click → restore the original value and close without sending
   - the `submit` helper converts multiple selections to semicolon‑delimited strings as required by the API
 - Date fields (`.edit_area[data-datepicker="true"]`) are wrapped in a `div` that launches a Bootstrap datepicker input when clicked. The picker now also uses explicit **Save/Cancel** buttons (previously blur/auto‑submit). The chosen date is converted to ISO format for server submission.
+
+_New in 2026:_ multi‑select dropdowns use a checkbox panel instead of the native control. The panel is generated dynamically on each open and mirrors the `<option>` list. Developers can customise its CSS (`.multiselect-dropdown`, `.multiselect-list`) or modify the open/close logic in `editor.js` around line 70.
+
 - Any new field type should follow the same UX: show a non‑editable label at rest and only commit when the user clicks Save.
 
 > **Important:** dropdowns and datepickers previously auto‑saved on `change`; this behaviour was changed in 2026 to avoid accidental updates. The code in `editor.js` assumes no `change` handler submits automatically.
