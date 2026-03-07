@@ -17,27 +17,27 @@ Changes to interaction logic are made in `editor.js`, then deployed to the NTG C
 
 ## File Structure
 
-| File/Directory                                                    | Role                                                                   | Editable?                           |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------- |
-| `EOI metadata editor _ NTG Central.html`                          | Saved production page — the local dev entry point                      | Sanitise only (see checklist below) |
-| `EOI metadata editor _ NTG Central_files/editor.js`               | Custom interaction logic — event handlers, API calls, UI feedback      | **Yes**                             |
-| `EOI metadata editor _ NTG Central_files/update-metadata.js`      | Squiz Matrix JS API library                                            | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/jquery-3.4.1.min.js`     | jQuery 3.4.1                                                           | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/jquery.editable.js`      | Jeditable inline-edit plugin — no longer used; kept as local copy only | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/datatables.lib.js`       | DataTables library                                                     | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/bootstrap.min.css`       | Bootstrap CSS (local copy)                                             | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/bootstrap-datepicker.*`  | Bootstrap Datepicker JS and CSS                                        | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/eoi-metadata-editor.css` | Custom styles for this editor                                          | Yes                                 |
-| `EOI metadata editor _ NTG Central_files/roboto.css`              | Roboto font — replaced with Google Fonts `@import` to avoid CORS       | Read-only                           |
-| `EOI metadata editor _ NTG Central_files/all.css`                 | Font Awesome Pro 5.15.4 CSS (local copy)                               | Read-only                           |
-| `public/webfonts/`                                                | Font Awesome font files served by Vite at `/webfonts/`                 | Read-only                           |
-| `public/cdn/userdata/`                                            | Stub JSON responses for NTG Central user-profile API calls             | Yes (stubs)                         |
-| `row-template.html`                                               | Squiz Matrix asset listing row template (source of truth for row HTML) | Yes                                 |
-| `server-functions.html`                                           | Squiz Matrix server-side helpers (`makeDropdown`, `makeMultiSelect`)   | Yes                                 |
-| `vite.config.js`                                                  | Vite configuration                                                     | Yes                                 |
-| `package.json`                                                    | npm scripts — `dev` starts Vite                                        | Yes                                 |
-| `.prettierignore`                                                 | Prevents Prettier from corrupting Squiz `%keyword%` syntax             | Yes                                 |
-| `.vscode/settings.json`                                           | Suppresses false VS Code HTML/JS errors in Squiz template files        | Yes                                 |
+| File/Directory                                       | Role                                                                   | Editable?                           |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| `EOI metadata editor _ NTG Central.html`             | Saved production page — the local dev entry point                      | Sanitise only (see checklist below) |
+| `src/editor.js`                                      | Custom interaction logic — event handlers, API calls, UI feedback      | **Yes**                             |
+| `src/update-metadata.js`                             | Squiz Matrix JS API library                                            | Read-only                           |
+| `src/jquery-3.4.1.min.js`                            | jQuery 3.4.1                                                           | Read-only                           |
+| `src/jquery.editable.js`                             | Jeditable inline-edit plugin — no longer used; kept as local copy only | Read-only                           |
+| `src/datatables.lib.js`                              | DataTables library                                                     | Read-only                           |
+| `src/bootstrap.min.css`                              | Bootstrap CSS (local copy)                                             | Read-only                           |
+| `src/bootstrap-datepicker.*`                         | Bootstrap Datepicker JS and CSS                                        | Read-only                           |
+| `src/eoi-metadata-editor.css`                        | Custom styles for this editor                                          | Yes                                 |
+| `EOI metadata editor _ NTG Central_files/`           | Browser-saved production assets — gitignored; do not edit              | No (ignored)                        |
+| `EOI metadata editor _ NTG Central_files/roboto.css` | Roboto font — replaced with Google Fonts `@import` to avoid CORS       | Read-only                           |
+| `public/webfonts/`                                   | Font Awesome font files served by Vite at `/webfonts/`                 | Read-only                           |
+| `public/cdn/userdata/`                               | Stub JSON responses for NTG Central user-profile API calls             | Yes (stubs)                         |
+| `row-template.html`                                  | Squiz Matrix asset listing row template (source of truth for row HTML) | Yes                                 |
+| `server-functions.html`                              | Squiz Matrix server-side helpers (`makeDropdown`, `makeMultiSelect`)   | Yes                                 |
+| `vite.config.js`                                     | Vite configuration                                                     | Yes                                 |
+| `package.json`                                       | npm scripts — `dev` starts Vite                                        | Yes                                 |
+| `.prettierignore`                                    | Prevents Prettier from corrupting Squiz `%keyword%` syntax             | Yes                                 |
+| `.vscode/settings.json`                              | Suppresses false VS Code HTML/JS errors in Squiz template files        | Yes                                 |
 
 > **Rule:** Edit `row-template.html` and `server-functions.html` for template/field changes, and `editor.js` for interaction changes. Never modify `update-metadata.js`. The saved HTML page is re-fetched from production when rows change; apply the sanitisation checklist below after every refresh.
 
@@ -56,7 +56,7 @@ Opens `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.html` i
 ### How it works
 
 - Vite serves all files in the project root and `public/` as static assets.
-- The saved HTML page references all assets with relative paths (`./EOI metadata editor _ NTG Central_files/...`), which Vite resolves correctly.
+- The saved HTML page references tracked assets from `./src/` and the remaining frame assets from `./EOI metadata editor _ NTG Central_files/` (gitignored, present only locally). Vite resolves both correctly.
 - `public/webfonts/` contains local Font Awesome font files so `/webfonts/*.woff2` etc. resolve without a network request.
 - `public/cdn/userdata/` contains stub JSON responses so NTG Central user-profile API calls (favourites, display name, user info) return valid empty data instead of 404-ing and throwing `SyntaxError`.
 - `roboto.css` imports Roboto from Google Fonts (CORS-safe) instead of the NTG Central server.
