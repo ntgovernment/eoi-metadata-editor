@@ -18,9 +18,7 @@ $(document).ready(function () {
     }
   });
 
-  // Multi-select: show display div at rest, reveal <select> on click
-  $("select.metadata_options[multiple]").each(function () {
-    var $select = $(this);
+  function getOptionDisplayText($select) {
     var labels = $select
       .find("option:selected")
       .map(function () {
@@ -28,35 +26,35 @@ $(document).ready(function () {
       })
       .get()
       .join(", ");
-    var $display = $('<div class="multiselect_display"></div>')
+
+    return labels || "\u00a0";
+  }
+
+  // Metadata selects: show display div at rest, reveal <select> on click
+  $("select.metadata_options").each(function () {
+    var $select = $(this);
+    var $display = $('<div class="metadata_option_display"></div>')
       .css({ cursor: "pointer", minHeight: "1em" })
-      .text(labels || "\u00a0");
+      .text(getOptionDisplayText($select));
     $select.before($display);
     $select.hide();
   });
 
-  $(document).on("click", ".multiselect_display", function () {
+  $(document).on("click", ".metadata_option_display", function () {
     var $display = $(this);
-    var $select = $display.next("select.metadata_options[multiple]");
+    var $select = $display.next("select.metadata_options");
     $display.hide();
     $select.show();
   });
 
   $(document).on("click", function (e) {
-    if ($(e.target).is(".multiselect_display")) return;
-    if (!$(e.target).closest("select.metadata_options[multiple]").length) {
-      $("select.metadata_options[multiple]:visible").each(function () {
+    if ($(e.target).is(".metadata_option_display")) return;
+    if (!$(e.target).closest("select.metadata_options").length) {
+      $("select.metadata_options:visible").each(function () {
         var $select = $(this);
-        var labels = $select
-          .find("option:selected")
-          .map(function () {
-            return $(this).text();
-          })
-          .get()
-          .join(", ");
         $select
-          .prev(".multiselect_display")
-          .text(labels || "\u00a0")
+          .prev(".metadata_option_display")
+          .text(getOptionDisplayText($select))
           .show();
         $select.hide();
       });
