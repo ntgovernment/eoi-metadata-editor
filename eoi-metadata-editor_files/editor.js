@@ -18,6 +18,51 @@ $(document).ready(function () {
     }
   });
 
+  // Multi-select: show display div at rest, reveal <select> on click
+  $("select.metadata_options[multiple]").each(function () {
+    var $select = $(this);
+    var labels = $select
+      .find("option:selected")
+      .map(function () {
+        return $(this).text();
+      })
+      .get()
+      .join(", ");
+    var $display = $('<div class="multiselect_display"></div>')
+      .css({ cursor: "pointer", minHeight: "1em" })
+      .text(labels || "\u00a0");
+    $select.before($display);
+    $select.hide();
+  });
+
+  $(document).on("click", ".multiselect_display", function () {
+    var $display = $(this);
+    var $select = $display.next("select.metadata_options[multiple]");
+    $display.hide();
+    $select.show();
+  });
+
+  $(document).on("click", function (e) {
+    if ($(e.target).is(".multiselect_display")) return;
+    if (!$(e.target).closest("select.metadata_options[multiple]").length) {
+      $("select.metadata_options[multiple]:visible").each(function () {
+        var $select = $(this);
+        var labels = $select
+          .find("option:selected")
+          .map(function () {
+            return $(this).text();
+          })
+          .get()
+          .join(", ");
+        $select
+          .prev(".multiselect_display")
+          .text(labels || "\u00a0")
+          .show();
+        $select.hide();
+      });
+    }
+  });
+
   $(".metadata-editor .edit_area").editable(
     function (value, settings) {
       return value;
