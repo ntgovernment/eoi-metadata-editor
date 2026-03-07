@@ -19,7 +19,15 @@
 
     <!--@@ Title @@-->
     <td class="attribute-editor">
-        <div class="edit_area" data-attributename="short_name">%asset_short_name%</div>
+        <script runat="server">
+            var typeCode = "%asset_type_code%";
+            var fileTypes = ["file", "word_doc", "ms_word_doc", "ms_word_doc2007", "pdf_file", "ms_excel", "ms_excel2007", "ms_powerpoint", "ms_powerpoint2007", "text_file"];
+            if (fileTypes.indexOf(typeCode) !== -1) {
+                print('<div class="edit_area" data-attributename="title">%asset_attribute_title%</div>');
+            } else {
+                print('<div class="edit_area" data-attributename="short_name">%asset_short_name%</div>');
+            }
+        </script>
     </td>
 
     <!--@@ Position title @@-->

@@ -98,11 +98,13 @@
         $el.empty().append($textarea, $actions);
         $textarea.focus();
 
-        $cancelBtn.on("click", function () {
+        $cancelBtn.on("click", function (e) {
+          e.stopPropagation();
           $el.empty().text(savedText);
         });
 
-        $saveBtn.on("click", function () {
+        $saveBtn.on("click", function (e) {
+          e.stopPropagation();
           onSave($textarea.val(), $el);
         });
 
@@ -319,6 +321,23 @@
         var msg = Array.isArray(data)
           ? data[0]
           : data.error || "An error occurred.";
+
+        // File assets (Word, PDF, etc.) store their title as the "title"
+        // attribute, not "short_name". If the page was rendered with the old
+        // template, silently retry with "title" and patch the DOM so future
+        // edits on this row go straight to the correct attribute.
+        if (
+          transaction.attrName === "short_name" &&
+          msg.indexOf("does not exist") !== -1
+        ) {
+          $('tr[id="' + transaction.assetid + '"]')
+            .find('.edit_area[data-attributename="short_name"]')
+            .attr("data-attributename", "title");
+          transaction.attrName = "title";
+          submitAttr(transaction);
+          return;
+        }
+
         displayResultAttr(msg, "error");
         $('tr[id="' + transaction.assetid + '"]')
           .find('.edit_area[data-attributename="' + transaction.attrName + '"]')

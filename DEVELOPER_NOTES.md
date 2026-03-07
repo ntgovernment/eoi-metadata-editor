@@ -481,6 +481,42 @@ providing a polished calendar UI for dates.
 
 ---
 
+## Bug fixes applied — 2026-03-08
+
+### Bug 3: `Attribute "short_name" does not exist` for file assets
+
+**Symptom:** Editing the Title cell on a Word document (`.docx`) row triggers: `Attribute "short_name" does not exist for Asset "…" (#XXXXX)` in the result bar.
+
+**Root cause:** File-type assets in Squiz Matrix do not have a `short_name` attribute. Their title is stored as `title` (accessed via `%asset_attribute_title%`). The row template was unconditionally using `data-attributename="short_name"` for all asset types.
+
+**Fix — `row-template.html`:** Replace the static Title `<div>` with a `<script runat="server">` block that checks `%asset_type_code%` and emits the correct `data-attributename` — `title` for file assets, `short_name` for all others. See _File asset vs. page asset attributes_ above for the full code.
+
+**Fix — `editor.js` (fallback for already-rendered pages):** `resultAttr` detects the "does not exist" error, retries with `setAttribute('title', …)`, and patches the DOM cell's `data-attributename` attribute. See the fallback code in _File asset vs. page asset attributes_ above.
+
+---
+
+### Bug 4: Cancel button re-opens the inline edit immediately
+
+**Symptom:** Clicking Cancel inside an inline `.edit_area` editor dismisses the textarea and restores the saved text, but immediately re-opens the edit.
+
+**Root cause:** The Cancel (and Save) `<button>` elements are children of the `.edit_area` `<div>`. Clicking either button bubbled the `click` event up to `.edit_area`, which triggered the `click.inlineEdit` handler again, re-entering the editing state.
+
+**Fix — `editor.js`:** Add `e.stopPropagation()` to both button click handlers inside `makeEditable`:
+
+```js
+$cancelBtn.on("click", function (e) {
+  e.stopPropagation();
+  $el.empty().text(savedText);
+});
+
+$saveBtn.on("click", function (e) {
+  e.stopPropagation();
+  onSave($textarea.val(), $el);
+});
+```
+
+---
+
 ## Bug fixes applied — 2025-03-07
 
 ### Bug 1: Double POST on every multi-select change
@@ -558,6 +594,13 @@ Single-select fields were unaffected — `$(this).find(":selected").val()` alrea
 - Replaced deprecated `apple-mobile-web-app-capable` meta tag with `mobile-web-app-capable`.
 - Removed debug `console.log(userAssetID + 'uidtest')` from inline script.
 
+### 2026-03-08: File asset `short_name` / `title` attribute fix
+
+- Added `<script runat="server">` conditional block to the Title cell in `row-template.html`; file-type assets now emit `data-attributename="title"` using `%asset_attribute_title%` rather than `short_name`.
+- Added `word_doc` to the `fileTypes` array in `row-template.html` (confirmed type code from production asset #739076).
+- Added silent `short_name → title` retry fallback in `resultAttr` in `editor.js` for pages rendered before the template fix was deployed.
+- Fixed Cancel and Save buttons re-opening the inline edit: added `e.stopPropagation()` to both click handlers in `makeEditable` in `editor.js`.
+
 ### 2026-03-07: NTG Central / intranets switched to multi-select
 
 - Updated the NTG Central and/or agency intranets column in `row-template.html` to use `makeMultiSelect()`.
@@ -604,19 +647,99 @@ Each row is a `<tr>` with Squiz Matrix keyword replacements:
 
 #### Field columns and their field IDs
 
-| Column                  | Type                     | Field ID / attribute | Template                                                 |
-| ----------------------- | ------------------------ | -------------------- | -------------------------------------------------------- |
-| ID                      | Link                     | —                    | `%asset_assetid%`                                        |
-| Status                  | Display                  | —                    | `%asset_status_description%`                             |
-| File Name               | Attribute (free-text)    | `name`               | `%asset_name%`                                           |
-| Title                   | Attribute (free-text)    | `short_name`         | `%asset_short_name%`                                     |
-| Position title          | Metadata (free-text)     | `445504`             | `%asset_metadata_job.title%`                             |
-| Designation             | Metadata (multi-select)  | `445634`             | `makeMultiSelect()` + `%asset_metadata_job.designation%` |
-| Close date              | Metadata (free-text)     | `445509`             | `%asset_metadata_job.closing-date%`                      |
-| Vacancy duration        | Metadata (free-text)     | `445506`             | `%asset_metadata_job.duration%`                          |
-| Agency                  | Metadata (single-select) | `445640`             | `makeDropdown()` + `%asset_metadata_job.agency%`         |
-| Location                | Metadata (multi-select)  | `445518`             | `makeMultiSelect()` + `%asset_metadata_job.location%`    |
-| NTG Central / intranets | Metadata (multi-select)  | `446182`             | `makeMultiSelect()` + `%asset_metadata_job.advertise%`   |
+| Column                  | Type                     | Field ID / attribute                         | Template                                                 |
+| ----------------------- | ------------------------ | -------------------------------------------- | -------------------------------------------------------- |
+| ID                      | Link                     | —                                            | `%asset_assetid%`                                        |
+| Status                  | Display                  | —                                            | `%asset_status_description%`                             |
+| File Name               | Attribute (free-text)    | `name`                                       | `%asset_name%`                                           |
+| Title                   | Attribute (free-text)    | `short_name` (pages) / `title` (file assets) | see _File asset vs. page asset attributes_ below         |
+| Position title          | Metadata (free-text)     | `445504`                                     | `%asset_metadata_job.title%`                             |
+| Designation             | Metadata (multi-select)  | `445634`                                     | `makeMultiSelect()` + `%asset_metadata_job.designation%` |
+| Close date              | Metadata (free-text)     | `445509`                                     | `%asset_metadata_job.closing-date%`                      |
+| Vacancy duration        | Metadata (free-text)     | `445506`                                     | `%asset_metadata_job.duration%`                          |
+| Agency                  | Metadata (single-select) | `445640`                                     | `makeDropdown()` + `%asset_metadata_job.agency%`         |
+| Location                | Metadata (multi-select)  | `445518`                                     | `makeMultiSelect()` + `%asset_metadata_job.location%`    |
+| NTG Central / intranets | Metadata (multi-select)  | `446182`                                     | `makeMultiSelect()` + `%asset_metadata_job.advertise%`   |
+
+#### File asset vs. page asset attributes
+
+Squiz Matrix file-type assets (Word documents, PDFs, Excel files, etc.) do **not** have a `short_name` attribute. Their display title is stored as the `title` attribute, exposed in templates as `%asset_attribute_title%`. Attempting to call `setAttribute('short_name', ...)` on a file asset returns:
+
+```
+Attribute "short_name" does not exist for Asset "filename.docx" (#XXXXX)
+```
+
+The Title cell in `row-template.html` uses a server-side `<script runat="server">` block to emit the correct attribute name based on `%asset_type_code%`:
+
+```html
+<td class="attribute-editor">
+  <script runat="server">
+    var typeCode = "%asset_type_code%";
+    var fileTypes = [
+      "file",
+      "word_doc",
+      "ms_word_doc",
+      "ms_word_doc2007",
+      "pdf_file",
+      "ms_excel",
+      "ms_excel2007",
+      "ms_powerpoint",
+      "ms_powerpoint2007",
+      "text_file",
+    ];
+    if (fileTypes.indexOf(typeCode) !== -1) {
+      print(
+        '<div class="edit_area" data-attributename="title">%asset_attribute_title%</div>',
+      );
+    } else {
+      print(
+        '<div class="edit_area" data-attributename="short_name">%asset_short_name%</div>',
+      );
+    }
+  </script>
+</td>
+```
+
+`editor.js` reads `data-attributename` at click time, so it submits the correct attribute name without any conditional logic of its own.
+
+**Known Squiz Matrix file-type type codes**
+
+| Asset type             | `%asset_type_code%` |
+| ---------------------- | ------------------- |
+| Generic File           | `file`              |
+| MS Word (legacy)       | `ms_word_doc`       |
+| MS Word 2007+          | `word_doc`          |
+| MS Word 2007+ (alt)    | `ms_word_doc2007`   |
+| PDF                    | `pdf_file`          |
+| MS Excel (legacy)      | `ms_excel`          |
+| MS Excel 2007+         | `ms_excel2007`      |
+| MS PowerPoint (legacy) | `ms_powerpoint`     |
+| MS PowerPoint 2007+    | `ms_powerpoint2007` |
+| Text File              | `text_file`         |
+
+> If you encounter a file-type asset that is still hitting the `short_name` error, inspect `%asset_type_code%` for that asset and add its type code to the `fileTypes` array in `row-template.html`.
+
+**Fallback in `editor.js`**
+
+For pages that were saved from production before the `row-template.html` fix was deployed, `resultAttr` silently retries with `title` when it receives a "does not exist" error for `short_name`, and patches `data-attributename` on the cell in the DOM so subsequent edits in the same session also use the correct attribute:
+
+```js
+if (
+  transaction.attrName === "short_name" &&
+  msg.indexOf("does not exist") !== -1
+) {
+  $('tr[id="' + transaction.assetid + '"]')
+    .find('.edit_area[data-attributename="short_name"]')
+    .attr("data-attributename", "title");
+  transaction.attrName = "title";
+  submitAttr(transaction);
+  return;
+}
+```
+
+This is a **safety net only** — the row template fix is the primary solution.
+
+---
 
 #### Select/multi-select column pattern
 
@@ -701,6 +824,8 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 5. **The nonce token** is read from `<input type="hidden" id="token">` on the page — this is injected by Squiz Matrix and required for all API write operations.
 6. **The HTML page is a saved production page** — edit `row-template.html` and `server-functions.html` (and apply changes in the Squiz Matrix asset listing), not the saved HTML directly. The `makeDropdown` and `makeMultiSelect` helper functions live in the page design of asset `#911527`. After re-saving from production, run the HTML Sanitisation Checklist.
 7. **Never format Squiz template files** — `row-template.html`, `server-functions.html`, and `eoi-metadata-editor.htm` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
+8. **File assets use `title`, not `short_name`** — never hardcode `data-attributename="short_name"` unconditionally in the row template. Always use the `%asset_type_code%` conditional (see _File asset vs. page asset attributes_) so file-type assets receive the correct attribute name.
+9. **`e.stopPropagation()` is required on inline edit buttons** — Cancel and Save buttons are children of the clickable `.edit_area` div. Without `stopPropagation`, clicks bubble to the parent and immediately re-open the editor.
 
 ---
 
@@ -720,3 +845,5 @@ Run this after any metadata field or select-control change:
 - Using `makeDropdown()` for a multi-select field: preselection and payload behavior will be incorrect.
 - Formatting template files with generic formatters: Squiz keywords become invalid.
 - Attaching delegated handlers to `.metadata-editor` instead of `$(document)`: causes duplicate submissions.
+- Using `data-attributename="short_name"` unconditionally for the Title column: file-type assets (Word, PDF, etc.) will fail with `Attribute "short_name" does not exist`. Use the `%asset_type_code%` conditional in `row-template.html` and verify the type code list includes all file types in the listing.
+- Omitting `e.stopPropagation()` on inline edit action buttons: click events bubble to the `.edit_area` parent and immediately re-trigger the edit handler.
