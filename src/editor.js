@@ -638,16 +638,18 @@
     };
 
     function submitStatusAttribute(content, assetID, attrName) {
+      // Use setAssetStatus() (not setAttribute) because "status" is a reserved
+      // Squiz Matrix property managed at the asset level, not a custom attribute.
+      // This API works for both page assets and file assets.
       var statusTransaction = {
         attrValue: statusCodeToLabel[content] || content,
         assetid: assetID,
         attrName: attrName,
         statusCode: content,
       };
-      js_api.setAttribute({
+      js_api.setAssetStatus({
         asset_id: assetID,
-        attr_name: attrName,
-        attr_val: content,
+        status: parseInt(content, 10),
         dataCallback: function (data) {
           resultStatusAttribute(data, statusTransaction);
         },
@@ -658,7 +660,8 @@
     }
 
     function resultStatusAttribute(data, statusTransaction) {
-      if (Array.isArray(data) && data[0].indexOf("successfully set") !== -1) {
+      // setAssetStatus returns: ["Status for Asset \"name\" (#id) has been changed successfully to {status_label}"]
+      if (Array.isArray(data) && data[0] && data[0].indexOf("successfully") !== -1) {
         displayResultAttr(data[0], "success");
         // Update Status cell with display label
         $('tr[id="' + statusTransaction.assetid + '"]')

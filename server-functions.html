@@ -71,19 +71,19 @@
             '</select>';
     }
 
-    // Helper for rendering the Status attribute dropdown.
+    // Helper for rendering the Status dropdown.
     //
-    // The Squiz Matrix asset *attribute* named "status" stores a numeric code.
-    // Editors only need four of the possible codes, so this helper always
-    // returns a `<select>` containing those options. The current value can be
-    // supplied either as the numeric code (e.g. "16") or the human label
-    // ("Live"); the function will convert to the matching code for
-    // `data-current`.
+    // The Squiz Matrix asset status is a reserved property (not a custom attribute).
+    // It stores a numeric code; editors only need four of the possible values.
+    // This helper always returns a `<select>` containing those four options.
+    // The current value can be supplied either as the numeric code (e.g. "16")
+    // or the human label ("Live"); the function will convert to the matching
+    // code for `data-current`.
     //
     // This is called from `row-template.html` instead of outputting
-    // `%asset_status_description%`. The client-side JavaScript (see
-    // `editor.js`) looks for `data-attributename="status"` to know that the
-    // field should be saved via `js_api.setAttribute()`.
+    // `%asset_status_description%`. The client-side JavaScript (see `editor.js`)
+    // looks for `data-attributename="status"` to know that the field should be
+    // saved via `js_api.setAssetStatus()` (which works for all asset types).
     function makeStatusDropdown(currentStatusValue, label) {
         // Map status values: numeric code -> display label
         var statusOptions = {
