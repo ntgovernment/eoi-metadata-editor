@@ -671,13 +671,19 @@
         data[0].indexOf("successfully") !== -1
       ) {
         displayResultAttr(data[0], "success");
-        // Update Status cell with display label
-        $('tr[id="' + statusTransaction.assetid + '"]')
-          .find('.metadata_option_display[data-label="status"]')
-          .text(statusTransaction.attrValue);
+        // Update Status cell with display label and data-status attribute
+        var statusKey = statusTransaction.attrValue.toLowerCase().replace(/ /g, "-");
+        var $row = $('tr[id="' + statusTransaction.assetid + '"]');
+        var $statusCell = $row.find('td.metadata-editor').eq(0);
+        var $statusDisplay = $statusCell.find('.metadata_option_display[data-label="status"]');
+        
+        // Update text and data-status on both <td> and <div>
+        $statusDisplay.text(statusTransaction.attrValue).attr("data-status", statusKey);
+        $statusCell.attr("data-status", statusKey);
+        
         if (dtTable) {
           dtTable
-            .row($('tr[id="' + statusTransaction.assetid + '"]')[0])
+            .row($row[0])
             .invalidate("dom")
             .draw(false);
         }
