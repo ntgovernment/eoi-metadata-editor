@@ -470,3 +470,9 @@ input[type="checkbox"]:focus-visible {
   gap: 0.5rem;
   margin: 0;
 }
+
+/* Breadcrumb: remove Bootstrap background */
+.breadcrumb,
+li.breadcrumb {
+  background-color: transparent !important;
+}
