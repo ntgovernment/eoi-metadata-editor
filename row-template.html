@@ -15,7 +15,11 @@
         var currentLower = String(currentstatus).toLowerCase().trim();
         
         Object.keys(statusMapping).forEach(function(code) {
-            if (String(code).toLowerCase() === currentLower || String(statusMapping[code]).toLowerCase() === currentLower) {
+            var labelLower = String(statusMapping[code]).toLowerCase();
+            // Match "Archive" or "Archived", "Live" or "Live", etc.
+            if (String(code).toLowerCase() === currentLower || 
+                labelLower === currentLower || 
+                (labelLower + 'd') === currentLower) {
                 statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
             }
         });
@@ -30,7 +34,11 @@
         var currentLower = String(currentstatus).toLowerCase().trim();
         
         Object.keys(statusMapping).forEach(function(code) {
-            if (String(code).toLowerCase() === currentLower || String(statusMapping[code]).toLowerCase() === currentLower) {
+            var labelLower = String(statusMapping[code]).toLowerCase();
+            // Match "Archive" or "Archived", "Live" or "Live", etc.
+            if (String(code).toLowerCase() === currentLower || 
+                labelLower === currentLower || 
+                (labelLower + 'd') === currentLower) {
                 statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
             }
         });
