@@ -13,13 +13,50 @@
   z-index: 100;
 }
 
+.edit_area,
+.metadata_option_display {
+  position: relative;
+}
+
 .edit_area textarea {
   min-height: 80px;
 }
 
-.edit_area:hover {
+.edit_area:hover,
+.metadata_option_display:hover {
   cursor: pointer;
   background: #e5e5e5;
+}
+
+.edit_area:hover::before,
+.metadata_option_display:hover::before {
+  content: "\f044";
+  font-family: "Font Awesome 5 Pro", sans-serif;
+  font-weight: 300;
+  position: absolute;
+  bottom: 100%;
+  left: 7px;
+  color: #fff;
+  font-size: 0.72em;
+  line-height: 1.8;
+  pointer-events: none;
+  z-index: 11;
+  transform: translateY(-4px);
+}
+
+.edit_area:hover::after,
+.metadata_option_display:hover::after {
+  content: "Edit " attr(data-label);
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72em;
+  padding: 2px 7px 2px 22px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
 }
 
 table {

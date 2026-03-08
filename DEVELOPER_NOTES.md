@@ -282,6 +282,40 @@ console.log(userAssetID + "uidtest");
 
 ---
 
+### 9. Restore `data-label` attributes
+
+**Why:** The production server does not emit `data-label` attributes on any element. After re-saving the HTML, the hover edit tooltips will stop working (the tooltip pill will read just "Edit " with no column name).
+
+**Fix:** Run this PowerShell block from the project root (adjust if field IDs change):
+
+```powershell
+$f = 'EOI metadata editor _ NTG Central.html'
+$c = Get-Content $f -Raw -Encoding UTF8
+
+# .edit_area divs
+$c = $c -replace '(class="edit_area[^"]*" data-attributename="name")', '$1 data-label="file name"'
+$c = $c -replace '(class="edit_area[^"]*" data-attributename="short_name")', '$1 data-label="title"'
+$c = $c -replace '(class="edit_area[^"]*" data-attributename="title")', '$1 data-label="title"'
+$c = $c -replace '(class="edit_area[^"]*" data-metadatafieldid="445504")', '$1 data-label="position title"'
+$c = $c -replace '(class="edit_area[^"]*" data-metadatafieldid="445509"[^>]*data-datepicker="true")', '$1 data-label="close date"'
+$c = $c -replace '(class="edit_area[^"]*" data-metadatafieldid="445506")', '$1 data-label="duration"'
+
+# <select> elements
+$c = $c -replace '(class="metadata_options"[^>]* data-metadatafieldid="445634")', '$1 data-label="designation"'
+$c = $c -replace '(class="metadata_options"[^>]* data-metadatafieldid="445640")', '$1 data-label="agency"'
+$c = $c -replace '(class="metadata_options"[^>]* data-metadatafieldid="445518")', '$1 data-label="location"'
+$c = $c -replace '(class="metadata_options"[^>]* data-metadatafieldid="446182")', '$1 data-label="NTG Central / intranets"'
+
+# remove any stale inline cursor style (editor.js now uses CSS)
+$c = $c -replace '(class="metadata_option_display") style="cursor: pointer; min-height: 1em;"', '$1 style="min-height: 1em;"'
+
+Set-Content $f $c -Encoding UTF8 -NoNewline
+```
+
+**Check:** `grep -c 'data-label=' "EOI metadata editor _ NTG Central.html"` — should report a non-zero count (approximately 9× number of rows, one per editable column per row).
+
+---
+
 ### Post-sanitisation smoke test
 
 After working through the checklist, start the dev server (`npm run dev`) and open the browser console. The following should be **absent**:
@@ -293,6 +327,8 @@ After working through the checklist, start the dev server (`npm run dev`) and op
 - CORS errors for `ntgcentral-dev.nt.gov.au` fonts
 - The `uidtest` log line
 - `SyntaxError` from `/cdn/userdata/` fetches
+
+Hover over any editable cell — the **"✏ Edit [column name]"** tooltip should appear above the cell.
 
 ---
 
@@ -319,28 +355,30 @@ Use this sequence for most changes to avoid regressions:
 | Saves duplicated or payload format wrong            | `editor.js`                                   |
 | Generated HTML looks stale                          | Re-publish/regenerate listing in Squiz Matrix |
 | Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above     |
+| Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
+| Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules |
 
 ---
 
 ## Metadata field ID reference
 
-| Column | Squiz field name | Field ID | Type | Notes |
-|---|---|---|---|---|
-| Position title | `job.title` | 445504 | Free text | Inline textarea edit |
-| Designation | `job.designation` | 445634 | Multi-select | All options unrestricted |
-| Close date | `job.closing-date` | 445509 | Date | Bootstrap datepicker; stored as ISO, displayed as DD/MM/YYYY |
-| Vacancy duration | `job.duration` | 445506 | Free text | Inline textarea edit |
-| Agency | `job.agency` | 445640 | Single-select | Saving also auto-saves Advertise (446182) |
-| Location | `job.location` | 445518 | Multi-select | All options unrestricted |
-| Where to advertise | `job.advertise` | 446182 | Multi-select | Options restricted to WoG + current Agency when editing |
+| Column             | Squiz field name   | Field ID | Type          | Notes                                                        |
+| ------------------ | ------------------ | -------- | ------------- | ------------------------------------------------------------ |
+| Position title     | `job.title`        | 445504   | Free text     | Inline textarea edit                                         |
+| Designation        | `job.designation`  | 445634   | Multi-select  | All options unrestricted                                     |
+| Close date         | `job.closing-date` | 445509   | Date          | Bootstrap datepicker; stored as ISO, displayed as DD/MM/YYYY |
+| Vacancy duration   | `job.duration`     | 445506   | Free text     | Inline textarea edit                                         |
+| Agency             | `job.agency`       | 445640   | Single-select | Saving also auto-saves Advertise (446182)                    |
+| Location           | `job.location`     | 445518   | Multi-select  | All options unrestricted                                     |
+| Where to advertise | `job.advertise`    | 446182   | Multi-select  | Options restricted to WoG + current Agency when editing      |
 
 Attribute columns (not metadata — use `js_api.setAttribute`):
 
-| Column | `data-attributename` | Notes |
-|---|---|---|
-| File Name | `name` | All asset types |
-| Title | `title` | File assets only (Word, PDF, etc.) |
-| Title | `short_name` | Non-file assets; `short_name→title` retry fallback active in `resultAttr()` |
+| Column    | `data-attributename` | Notes                                                                       |
+| --------- | -------------------- | --------------------------------------------------------------------------- |
+| File Name | `name`               | All asset types                                                             |
+| Title     | `title`              | File assets only (Word, PDF, etc.)                                          |
+| Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()` |
 
 ---
 
@@ -435,12 +473,12 @@ $(".metadata_options").each(function () {
 
 All three control types use explicit **Save/Cancel buttons** — there is no auto-save on `blur` or `change`. Clicking Cancel or anywhere outside the open popup restores the original value without submitting.
 
-| Control | CSS class | Used for | DOM inserted by |
-|---|---|---|---|
-| Textarea + buttons | _(inside `.edit_area`)_ | Free-text metadata, attributes | `makeEditable()` |
-| Native `<select>` + buttons | `.single-dropdown` | Single-select (Agency 445640) | `.metadata_option_display` click handler |
-| Checkbox panel + buttons | `.multiselect-dropdown` | Multi-select (Designation, Location, Advertise…) | `.metadata_option_display` click handler |
-| Datepicker `<input>` + buttons | _(inside `.edit_area[data-datepicker]`)_ | Close date (445509) | `.edit_area[data-datepicker]` click handler |
+| Control                        | CSS class                                | Used for                                         | DOM inserted by                             |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------ | ------------------------------------------- |
+| Textarea + buttons             | _(inside `.edit_area`)_                  | Free-text metadata, attributes                   | `makeEditable()`                            |
+| Native `<select>` + buttons    | `.single-dropdown`                       | Single-select (Agency 445640)                    | `.metadata_option_display` click handler    |
+| Checkbox panel + buttons       | `.multiselect-dropdown`                  | Multi-select (Designation, Location, Advertise…) | `.metadata_option_display` click handler    |
+| Datepicker `<input>` + buttons | _(inside `.edit_area[data-datepicker]`)_ | Close date (445509)                              | `.edit_area[data-datepicker]` click handler |
 
 **Single-select popup DOM (`.single-dropdown`):**
 
@@ -465,8 +503,8 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
 <!-- injected after .metadata_option_display, before the hidden <select> -->
 <div class="multiselect-dropdown">
   <div class="multiselect-list">
-    <label><input type="checkbox" value="WoG"> NTG Central</label>
-    <label><input type="checkbox" value="DET"> Department of Education</label>
+    <label><input type="checkbox" value="WoG" /> NTG Central</label>
+    <label><input type="checkbox" value="DET" /> Department of Education</label>
     ...
   </div>
   <div class="metadata_option_actions">
@@ -667,7 +705,122 @@ Single-select fields were unaffected — `$(this).find(":selected").val()` alrea
 
 ---
 
-## Change log
+## Hover edit tooltip
+
+Every editable cell shows a **"✏ Edit [column name]"** tooltip above it when hovered, so users know the cell is clickable without text instructions.
+
+### How it works
+
+The tooltip is built entirely from CSS using `::before` and `::after` pseudo-elements on `.edit_area` and `.metadata_option_display`. No extra HTML is needed at runtime.
+
+```
+[::before]  FA pen-to-square icon (z-index 11, absolutely positioned above cell)
+[::after]   Dark pill label          (z-index 10, absolutely positioned above cell)
+```
+
+Both pseudo-elements use `position: absolute; bottom: 100%` so they float immediately above the cell div without overlapping the cell's text content. `pointer-events: none` on both prevents them from interfering with click events.
+
+**CSS rules (in `eoi-metadata-editor.css`):**
+
+```css
+/* position context for pseudo-elements */
+.edit_area,
+.metadata_option_display {
+  position: relative;
+}
+
+/* icon — FA Light pen-to-square (U+F044) */
+.edit_area:hover::before,
+.metadata_option_display:hover::before {
+  content: "\f044";
+  font-family: "Font Awesome 5 Pro", sans-serif;
+  font-weight: 300;
+  position: absolute;
+  bottom: 100%;
+  left: 7px;          /* aligns with pill's inner left padding */
+  color: #fff;
+  font-size: 0.72em;
+  line-height: 1.8;
+  pointer-events: none;
+  z-index: 11;
+  transform: translateY(-4px);
+}
+
+/* label pill */
+.edit_area:hover::after,
+.metadata_option_display:hover::after {
+  content: "Edit " attr(data-label);  /* dynamic column name from data-label */
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72em;
+  padding: 2px 7px 2px 22px;  /* left padding makes room for the icon */
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+}
+```
+
+The icon and label are in separate pseudo-elements intentionally — mixing Font Awesome glyphs and plain text in a single `content:` string causes the FA font to misrender the first character of the text that follows the icon.
+
+### The `data-label` attribute
+
+The tooltip text is driven by `data-label` attributes on each editable element. The CSS `attr(data-label)` function reads this at paint time.
+
+**Where labels come from:**
+
+| Element | How `data-label` is set |
+|---|---|
+| `.edit_area` (free-text, datepicker) | Set directly in `row-template.html`, e.g. `data-label="file name"` |
+| `<select class="metadata_options">` | `makeDropdown(…, label)` / `makeMultiSelect(…, label)` in `server-functions.html` emit `data-label="…"` on the `<select>` |
+| `.metadata_option_display` | Copied from the adjacent `<select data-label>` by `editor.js` on page load |
+
+The `.metadata_option_display` div is injected by `editor.js` and does not exist in the server-rendered HTML, so it cannot get `data-label` from the template. `editor.js` copies it from the hidden `<select>` at initialisation time:
+
+```js
+$("select.metadata_options").each(function () {
+  var $select = $(this);
+  var $display = $('<div class="metadata_option_display"></div>')
+    .attr("data-label", $select.attr("data-label") || "")
+    ...
+});
+```
+
+If the rendered HTML was saved with display divs already in the DOM (from a previous page load), the existing div is patched rather than recreated:
+
+```js
+$existing.attr("data-label", $select.attr("data-label") || "");
+```
+
+### Adding or changing a label
+
+1. **Free-text / datepicker cells** — update `data-label="…"` on the `.edit_area` div in `row-template.html`, then also update the rendered HTML (find the corresponding `data-attributename` or `data-metadatafieldid` — use find/replace across the file).
+2. **Select cells** — update the string passed as the third argument to `makeDropdown(…, 'label')` or `makeMultiSelect(…, 'label')` in `row-template.html`. Update `server-functions.html` function signatures if their label param name or default changes. Then update `data-label="…"` on every matching `<select class="metadata_options" data-metadatafieldid="…">` in the rendered HTML.
+3. **Label convention** — use lowercase (e.g. `"file name"`, `"position title"`, `"NTG Central / intranets"`). The CSS `::after` prefixes `"Edit "` so the result is `"Edit file name"` — sentence case with no extra capitalisation needed.
+
+> **Coding agents:** when re-saving the HTML from production, run a find/replace pass to restore all `data-label` attributes — the production server does not emit them. See the bulk PowerShell replacement commands used in the initial setup as a reference pattern.
+
+---
+
+
+
+### 2026-03-08: Hover edit tooltip system
+
+- Added `::before` (FA pen-to-square icon, `\f044`) and `::after` (dark semi-transparent pill label) pseudo-elements to `.edit_area:hover` and `.metadata_option_display:hover` in `eoi-metadata-editor.css`. Tooltip floats above the cell via `position: absolute; bottom: 100%` and never overlaps cell text.
+- Icon and label are in separate pseudo-elements so Font Awesome's private-use glyph doesn't corrupt adjacent plain-text characters.
+- Label text is driven by `content: "Edit " attr(data-label)` — no extra DOM nodes required.
+- Added `data-label` attributes (lowercase, sentence-case values) to all `.edit_area` divs in `row-template.html`.
+- Added optional `label` third parameter to `makeDropdown()` and `makeMultiSelect()` in `server-functions.html`; emitted as `data-label` on the rendered `<select>`.
+- `editor.js` now copies `data-label` from the hidden `<select>` onto the injected `.metadata_option_display` div on page load (both new-div and pre-existing-div code paths).
+- Bulk-updated `data-label` attributes and removed stale `cursor: pointer` inline styles across all rows in the rendered HTML via PowerShell `Set-Content` replacements.
+- Cursor (`pointer`) is now managed entirely by CSS on hover; removed all JS inline-style assignments of `cursor: pointer` for `.metadata_option_display` divs.
+
+### 2026-03-08: Consistent cell hover styles
+
+- Added `.metadata_option_display:hover` alongside `.edit_area:hover` so dropdown/multiselect cells get the same `#e5e5e5` background highlight on hover as File Name and Title.
+- Hover background and cursor are now on a single shared rule; both cell types behave identically at rest and on hover.
 
 ### 2026-03-07: Local dev environment setup and HTML sanitisation
 

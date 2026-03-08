@@ -1,7 +1,7 @@
 <!--@@ SERVER SIDE (BEFORE PAGE LOADS) FUNCTIONS @@-->
 <script runat="server">
 
-    function makeDropdown(data, currentvalue) {
+    function makeDropdown(data, currentvalue, label) {
 
         if (!data.hasOwnProperty('attributes')) {
             return '';
@@ -23,13 +23,14 @@
 
         return '<select class="metadata_options"' +
             ' data-metadataFieldid="' + metadatafield.assetid + '"' +
-            ' data-current="' + (matchedKey || currentvalue) + '">' +
+            ' data-current="' + (matchedKey || currentvalue) + '"' +
+            (label ? ' data-label="' + label + '"' : '') + '>' +
             '<option value=""></option>' +
             optionsList.join('') +
             '</select>';
     }
 
-    function makeMultiSelect(data, currentvalues) {
+    function makeMultiSelect(data, currentvalues, label) {
 
         if (!data.hasOwnProperty('attributes')) {
             return '';
@@ -64,7 +65,8 @@
 
         return '<select multiple class="metadata_options"' +
             ' data-metadataFieldid="' + metadatafield.assetid + '"' +
-            ' data-current="' + JSON.stringify(matchedKeys).replace(/"/g, '&quot;') + '">' +
+            ' data-current="' + JSON.stringify(matchedKeys).replace(/"/g, '&quot;') + '"' +
+            (label ? ' data-label="' + label + '"' : '') + '>' +
             optionsList.join('') +
             '</select>';
     }

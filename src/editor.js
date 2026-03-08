@@ -41,11 +41,13 @@
       if ($existing.length) {
         // Already in DOM (page saved with injected divs) — just refresh text
         $existing
-          .css({ cursor: "pointer", minHeight: "1em" })
+          .attr("data-label", $select.attr("data-label") || "")
+          .css({ minHeight: "1em" })
           .text(getOptionDisplayText($select));
       } else {
         var $display = $('<div class="metadata_option_display"></div>')
-          .css({ cursor: "pointer", minHeight: "1em" })
+          .attr("data-label", $select.attr("data-label") || "")
+          .css({ minHeight: "1em" })
           .text(getOptionDisplayText($select));
         $select.before($display);
       }
