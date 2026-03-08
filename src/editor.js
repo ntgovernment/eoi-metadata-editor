@@ -824,6 +824,10 @@
       ordering: true,
       searching: true,
       info: true,
+      // Custom dom: top ctrl div holds length+filter (hidden; JS moves them to
+      // the filter bar). Table sits directly in the wrapper. Bottom row holds
+      // info + paginate so we can flex them without Bootstrap column constraints.
+      dom: '<"dt-top-ctrl"lf><t><"dt-bottom-row"ip>',
       columnDefs: [
         {
           // All columns: extract visible text for sort/filter; leave display HTML untouched
@@ -860,5 +864,194 @@
         },
       ],
     });
+
+    // ===== Column filters: Status, Designation, Agency, Location =====
+    function escapeRegex(s) {
+      return s.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    }
+
+    // Collect unique display values from a DataTables column.
+    // Multi-value cells (newline-separated) are split into individual entries.
+    function buildUniqueColValues(colIdx) {
+      var seen = {};
+      var vals = [];
+      dtTable
+        .column(colIdx)
+        .data()
+        .each(function (cellHtml) {
+          var tmp = document.createElement("div");
+          tmp.innerHTML = cellHtml;
+          var el =
+            tmp.querySelector(".metadata_option_display") ||
+            tmp.querySelector(".edit_area");
+          var text = el ? el.textContent.trim() : tmp.textContent.trim();
+          text.split("\n").forEach(function (v) {
+            v = v.trim();
+            if (v && !seen[v]) {
+              seen[v] = true;
+              vals.push(v);
+            }
+          });
+        });
+      return vals.sort();
+    }
+
+    var filterConfigs = [
+      { label: "Status", colIdx: 1, multiVal: false },
+      { label: "Designation", colIdx: 5, multiVal: true },
+      { label: "Agency", colIdx: 8, multiVal: false },
+      { label: "Location", colIdx: 9, multiVal: true },
+    ];
+
+    var $filterBar = $('<div class="dt-filter-bar ntgc-px-144"></div>');
+    var $activeFiltersRow = $(
+      '<div class="dt-active-filters ntgc-px-144"></div>',
+    ).hide();
+    var $pillsContainer = $('<div class="dt-active-pills"></div>');
+    var $clearBtn = $(
+      '<button type="button" class="dt-clear-filters ntgc-btn btn-sm ntgc-btn--tertiary">Clear filters</button>',
+    );
+    $activeFiltersRow.append(
+      $('<span class="dt-active-label">Applied filters:</span>'),
+      $pillsContainer,
+      $clearBtn,
+    );
+
+    // Keeps a reference to each filter's <select> keyed by colIdx.
+    var filterSelects = {};
+
+    function applyColumnFilter(cfg, val) {
+      if (val === "") {
+        dtTable.column(cfg.colIdx).search("");
+      } else if (cfg.multiVal) {
+        // Substring regex: matches rows where any one of the multi-select values
+        // contains the selected filter value (e.g. "Darwin" in "Angurugu\nDarwin").
+        dtTable.column(cfg.colIdx).search(escapeRegex(val), true, false);
+      } else {
+        dtTable
+          .column(cfg.colIdx)
+          .search("^" + escapeRegex(val) + "$", true, false);
+      }
+    }
+
+    function updateActiveFilters() {
+      $pillsContainer.empty();
+      var anyActive = false;
+
+      // Search term pill
+      var searchTerm = dtTable.search();
+      if (searchTerm !== "") {
+        anyActive = true;
+        var $searchPill = $('<span class="dt-filter-pill"></span>').text(
+          'Search: "' + searchTerm + '"',
+        );
+        var $sx = $(
+          '<button type="button" class="dt-pill-remove" aria-label="Remove search filter">\u00d7</button>',
+        );
+        $sx.on("click", function () {
+          dtTable.search("").draw();
+          $(dtTable.table().container())
+            .find(".dataTables_filter input")
+            .val("");
+          updateActiveFilters();
+        });
+        $searchPill.append($sx);
+        $pillsContainer.append($searchPill);
+      }
+
+      // Column filter pills
+      filterConfigs.forEach(function (cfg) {
+        var $sel = filterSelects[cfg.colIdx];
+        var val = $sel.val();
+        if (val === "") return;
+        anyActive = true;
+        var $pill = $('<span class="dt-filter-pill"></span>').text(
+          cfg.label + ": " + val,
+        );
+        var $x = $(
+          '<button type="button" class="dt-pill-remove" aria-label="Remove filter">\u00d7</button>',
+        );
+        $x.on("click", function () {
+          $sel.val("");
+          applyColumnFilter(cfg, "");
+          dtTable.draw();
+          updateActiveFilters();
+        });
+        $pill.append($x);
+        $pillsContainer.append($pill);
+      });
+
+      if (anyActive) {
+        $activeFiltersRow.show();
+      } else {
+        $activeFiltersRow.hide();
+      }
+    }
+
+    $clearBtn.on("click", function () {
+      dtTable.search("");
+      $(dtTable.table().container()).find(".dataTables_filter input").val("");
+      filterConfigs.forEach(function (cfg) {
+        filterSelects[cfg.colIdx].val("");
+        applyColumnFilter(cfg, "");
+      });
+      dtTable.draw();
+      updateActiveFilters();
+    });
+
+    filterConfigs.forEach(function (cfg) {
+      var $sel = $(
+        '<select class="dt-filter-select custom-select custom-select-sm form-control form-control-sm"></select>',
+      );
+      var defaultLabel;
+      if (cfg.label === "Status") {
+        defaultLabel = "All status";
+      } else if (cfg.label === "Agency") {
+        defaultLabel = "All agencies";
+      } else if (cfg.label === "Designation") {
+        defaultLabel = "All designations";
+      } else if (cfg.label === "Location") {
+        defaultLabel = "All locations";
+      } else {
+        defaultLabel = "All " + cfg.label + "s";
+      }
+      $sel.append($('<option value="">' + defaultLabel + "</option>"));
+      buildUniqueColValues(cfg.colIdx).forEach(function (v) {
+        $sel.append($("<option></option>").val(v).text(v));
+      });
+      $sel.on("change", function () {
+        applyColumnFilter(cfg, $(this).val());
+        dtTable.draw();
+        updateActiveFilters();
+      });
+      filterSelects[cfg.colIdx] = $sel;
+      var $wrapper = $('<div class="dt-filter-item"></div>');
+      var $lbl = $('<label class="dt-filter-label"></label>').text(cfg.label);
+      $wrapper.append($lbl, $sel);
+      $filterBar.append($wrapper);
+    });
+
+    // Move DataTables search box into the filter bar so they share one row
+    $filterBar.prepend(
+      $(dtTable.table().container()).find(".dataTables_filter"),
+    );
+
+    // Move DataTables length control into the filter bar, right-aligned
+    $filterBar.append(
+      $(dtTable.table().container())
+        .find(".dataTables_length")
+        .addClass("dt-length-right"),
+    );
+
+    // Reflect search term changes in the pills row
+    dtTable.on("search.dt", function () {
+      updateActiveFilters();
+    });
+
+    var $tableNode = $(dtTable.table().node());
+    var $wrapperNode = $tableNode.closest(".dataTables_wrapper");
+    $wrapperNode.addClass("ntgc-px-32");
+    $tableNode.before($filterBar);
+    $tableNode.before($activeFiltersRow);
   });
 })(jQuery);

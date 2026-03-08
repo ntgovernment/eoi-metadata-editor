@@ -32,35 +32,38 @@ DataTables provides client-side table management: filtering, sorting across all 
 
 **Initialization:**
 Located in `src/editor.js` around line 880:
+
 ```javascript
-var dtTable = $('#myTable').DataTable({
+var dtTable = $("#myTable").DataTable({
   paging: true,
   pageLength: 10,
   ordering: true,
   searching: true,
   info: true,
   lengthChange: false,
-  pagingType: 'simple_numbers',
+  pagingType: "simple_numbers",
   columnDefs: [
     {
-      targets: '_all',
-      render: function(data, type, row, meta) {
+      targets: "_all",
+      render: function (data, type, row, meta) {
         // Extract visible text from cell divs for sorting/filtering
         var $cell = $(row);
-        var displayText = $cell.find('.metadata_option_display').text() || 
-                          $cell.find('.edit_area').text() || 
-                          $cell.text();
-        return type === 'display' ? $cell.html() : displayText;
-      }
+        var displayText =
+          $cell.find(".metadata_option_display").text() ||
+          $cell.find(".edit_area").text() ||
+          $cell.text();
+        return type === "display" ? $cell.html() : displayText;
+      },
     },
     {
       targets: 6, // Close Date column
-      render: function(data, type, row, meta) {
-        if (type === 'sort' || type === 'filter') {
+      render: function (data, type, row, meta) {
+        if (type === "sort" || type === "filter") {
           // Convert DD/MM/YYYY to YYYYMMDD string for chronological sorting
-          var text = $(row).find('.metadata_option_display').text()
-                    || $(row).find('.edit_area').text()
-                    || $(row).text();
+          var text =
+            $(row).find(".metadata_option_display").text() ||
+            $(row).find(".edit_area").text() ||
+            $(row).text();
           var parts = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
           if (parts) {
             return parts[3] + parts[2] + parts[1]; // YYYYMMDD
@@ -68,9 +71,9 @@ var dtTable = $('#myTable').DataTable({
           return text;
         }
         return $(row).html(); // display unchanged
-      }
-    }
-  ]
+      },
+    },
+  ],
 });
 ```
 
@@ -81,7 +84,6 @@ var dtTable = $('#myTable').DataTable({
    - `'sort'` – return a sortable key (string or numeric)
    - `'filter'` – return text for search matching
    - `'type'` – return a value for type detection
-   
 2. **Sort and filter extraction** – The first `columnDefs` entry uses `.metadata_option_display` for dropdowns (displays clean agency name) and `.edit_area` for text fields, falling back to cell text. This ensures sorting is based on human-readable values, not underlying codes.
 
 3. **Close Date override** – Column 6 receives special handling: when called for sort/filter, it converts `DD/MM/YYYY` to `YYYYMMDD` (numeric-like string) for correct date ordering, even though display remains `DD/MM/YYYY`.
@@ -97,10 +99,13 @@ By default 10 rows appear per page (`pageLength: 10`). Change this value in the 
 
 **Row invalidation after edits:**
 To keep search, sort, and pagination in sync after a user edits a cell, the render function must be re-called. This happens via:
+
 ```javascript
-dtTable.row(tr).invalidate('dom').draw(false);
+dtTable.row(tr).invalidate("dom").draw(false);
 ```
+
 where `tr` is the table row DOM element. This is called in three post-save callbacks:
+
 - `refreshTableCell()` – after inline text save
 - `refreshTableCellsAttr()` – after attribute save
 - `resultStatusAttribute()` – after status dropdown save
@@ -109,6 +114,7 @@ The `'dom'` flag tells DataTables to re-read the DOM; `false` passed to `draw()`
 
 **Extending:**
 To modify search delay, pagination style, page length, or other options, edit the initialization object in `src/editor.js` near line 880. See the [DataTables options reference](https://datatables.net/reference/option/) for all available settings. Common tweaks:
+
 - Change `pageLength: 10` to show more/fewer rows
 - Add `searchDelay: 500` for delayed search as user types
 - Change `pagingType: 'full_numbers'` to show all page numbers
@@ -135,19 +141,25 @@ Navigate to `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.h
 DataTables renders the initial table by calling a `render` function for each cell. If you bind jQuery event handlers directly to table cells _before_ DataTables initialization is complete, those handlers may be orphaned when DataTables rewrites the cell HTML internally.
 
 Example of what breaks:
+
 ```javascript
 // ❌ BROKEN – handlers lost after DataTables init
-var $cells = $('.edit_area');
-$cells.on('click', function() { /* edit logic */ });
+var $cells = $(".edit_area");
+$cells.on("click", function () {
+  /* edit logic */
+});
 // Later: DataTables init calls render, which calls $cell.innerHTML = ...
 // The new HTML has no handlers attached.
 ```
 
 **The solution:**
 Use **event delegation** via document-level handlers. This way, the handler stays in place even if the target element's HTML is replaced:
+
 ```javascript
 // ✅ CORRECT – handler survives DOM rewrite
-$(document).on('click', '.edit_area', function() { /* edit logic */ });
+$(document).on("click", ".edit_area", function () {
+  /* edit logic */
+});
 // Later: DataTables rewrites HTML, but the delegation handler is on document
 // and still catches clicks on the new .edit_area elements.
 ```
@@ -165,6 +177,7 @@ All interactive handlers use delegation:
 **Rule for new interactive elements:**
 
 If you add a new field type that requires JavaScript interaction (text editing, date picking, dropdown, etc.):
+
 1. **Do not bind handlers directly to individual cells** before or after DataTables initialization.
 2. **Always use delegation:** `$(document).on('eventType', 'newSelector', handler)`.
 3. **Test with DataTables:** Verify that clicking the control still works after the table re-renders (sort, paginate, search).
