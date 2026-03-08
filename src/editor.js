@@ -80,10 +80,10 @@
           $ddSelect.append($opt);
         });
         var $saveBtn = $(
-          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
         );
         var $cancelBtn = $(
-          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
         );
         var $actions = $('<div class="single-dropdown-actions"></div>').append(
           $saveBtn,
@@ -120,10 +120,10 @@
         $list.append($label);
       });
       var $saveBtn = $(
-        '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
       );
       var $cancelBtn = $(
-        '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
       );
       var $actions = $('<div class="metadata_option_actions"></div>').append(
         $saveBtn,
@@ -136,7 +136,7 @@
 
     $(document).on(
       "click",
-      ".metadata_option_actions .btn-primary",
+      ".metadata_option_actions [data-action='save']",
       function (e) {
         e.stopPropagation();
         var $dropdown = $(this).closest(".multiselect-dropdown");
@@ -161,7 +161,7 @@
 
     $(document).on(
       "click",
-      ".metadata_option_actions .btn-secondary",
+      ".metadata_option_actions [data-action='cancel']",
       function (e) {
         e.stopPropagation();
         var $dropdown = $(this).closest(".multiselect-dropdown");
@@ -179,7 +179,7 @@
 
     $(document).on(
       "click",
-      ".single-dropdown-actions .btn-primary",
+      ".single-dropdown-actions [data-action='save']",
       function (e) {
         e.stopPropagation();
         var $dropdown = $(this).closest(".single-dropdown");
@@ -213,7 +213,7 @@
 
     $(document).on(
       "click",
-      ".single-dropdown-actions .btn-secondary",
+      ".single-dropdown-actions [data-action='cancel']",
       function (e) {
         e.stopPropagation();
         var $dropdown = $(this).closest(".single-dropdown");
@@ -263,10 +263,10 @@
           savedText,
         );
         var $saveBtn = $(
-          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
         );
         var $cancelBtn = $(
-          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
         );
         var $actions = $(
           '<div style="margin-top:4px;display:flex;gap:4px;">',
@@ -349,10 +349,10 @@
         $input.val(currentText);
 
         var $saveBtn = $(
-          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
         );
         var $cancelBtn = $(
-          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
         );
         var $actions = $(
           '<div style="margin-top:4px;display:flex;gap:4px;">',

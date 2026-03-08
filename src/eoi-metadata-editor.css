@@ -124,3 +124,25 @@ table.dataTable thead td {
   display: flex;
   gap: 4px;
 }
+
+.single-dropdown-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.ntgc-btn.ntgc-btn--secondary[data-action="save"] {
+  border-radius: 9999px;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.ntgc-btn.ntgc-btn--tertiary[data-action="cancel"] {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+.ntgc-btn.ntgc-btn--tertiary[data-action="cancel"]::before,
+.ntgc-btn.ntgc-btn--tertiary[data-action="cancel"]:hover::before {
+  display: none;
+}

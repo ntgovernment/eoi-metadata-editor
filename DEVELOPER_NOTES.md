@@ -86,9 +86,25 @@ Key points for future developers:
 
 Most logic that translates a user interaction into an API call lives in `src/editor.js`. When adding or modifying a field type, search for the following patterns:
 
-- `makeEditable(...)` covers simple text/textarea cells. It injects a textarea plus **Save/Cancel** buttons, and calls `onSave(value, $el)` when the user clicks Save.
+- **Save/Cancel button style** – every editable control uses the same pair of buttons for consistency. The HTML is constructed in JavaScript, not hard‑coded in the HTML page. The convention is:
+  ```js
+  $('<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+      <span class="fal fa-save"></span> Save
+    </button>');
+
+  $('<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">
+      Cancel
+    </button>');
+  ```
+  - **Icon tags** always use `<span>` rather than `<i>` for FA5 compatibility.
+  - The Save button has a pill-shaped border radius equal to its height; the cancel button has no icon and does not move on hover (the right-arrow pseudo‑element is suppressed by an override rule in `eoi-metadata-editor.css`).
+  - Padding‑X is intentionally small (`0.5rem` on save, `0.25rem` on cancel) so the buttons don’t dominate narrow dropdown panels.
+  - The surrounding action container has `display:flex` and `gap:4px` in both JS inline styles and CSS selectors (`.metadata_option_actions`, `.single-dropdown-actions`). Reducing the gap further is usually fine, but keep it symmetrical.
+  - Event handlers look for `[data-action='save']` / `[data-action='cancel']` instead of Bootstrap classes, so the CSS can change without breaking logic.
+
+- `makeEditable(...)` covers simple text/textarea cells. It injects a textarea plus the standard Save/Cancel buttons, and calls `onSave(value, $el)` when the user clicks Save.
 - Dropdowns are always generated server‑side using `makeDropdown` or `makeMultiSelect` (see `server-functions.html`). On page load `editor.js` hides the `<select>`, prepends a clickable `<div class="metadata_option_display">` showing the current selection, and wires up:
-  - click → open either the native `<select>` (single‑select) or a custom checkbox panel (multi‑select) and inject **Save**/**Cancel** buttons, recording the original value
+  - click → open either the native `<select>` (single‑select) or a custom checkbox panel (multi‑select) and inject the standard buttons, recording the original value
   - Save → for multi‑selects the checkbox panel state is written back to the hidden `<select>`; `submit(...)` is then called and the `metadata_option_display` text refreshed. Multi‑select displays now use newline‑separated labels so each item appears on its own line.
   - Cancel or outside click → restore the original value and close without sending
   - the `submit` helper converts multiple selections to semicolon‑delimited strings as required by the API
@@ -348,15 +364,15 @@ Use this sequence for most changes to avoid regressions:
 
 ### Fast Decision Guide
 
-| Symptom                                             | File to change                                |
-| --------------------------------------------------- | --------------------------------------------- |
-| Field displays wrong control type                   | `row-template.html`                           |
-| Options or selected state wrong for selects         | `server-functions.html`                       |
-| Saves duplicated or payload format wrong            | `editor.js`                                   |
-| Generated HTML looks stale                          | Re-publish/regenerate listing in Squiz Matrix |
-| Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above     |
+| Symptom                                             | File to change                                                                                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Field displays wrong control type                   | `row-template.html`                                                                                                                                                |
+| Options or selected state wrong for selects         | `server-functions.html`                                                                                                                                            |
+| Saves duplicated or payload format wrong            | `editor.js`                                                                                                                                                        |
+| Generated HTML looks stale                          | Re-publish/regenerate listing in Squiz Matrix                                                                                                                      |
+| Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above                                                                                                                          |
 | Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
-| Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules |
+| Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules                                                                                       |
 
 ---
 
@@ -737,7 +753,7 @@ Both pseudo-elements use `position: absolute; bottom: 100%` so they float immedi
   font-weight: 300;
   position: absolute;
   bottom: 100%;
-  left: 7px;          /* aligns with pill's inner left padding */
+  left: 7px; /* aligns with pill's inner left padding */
   color: #fff;
   font-size: 0.72em;
   line-height: 1.8;
@@ -749,14 +765,14 @@ Both pseudo-elements use `position: absolute; bottom: 100%` so they float immedi
 /* label pill */
 .edit_area:hover::after,
 .metadata_option_display:hover::after {
-  content: "Edit " attr(data-label);  /* dynamic column name from data-label */
+  content: "Edit " attr(data-label); /* dynamic column name from data-label */
   position: absolute;
   bottom: 100%;
   left: 0;
   background: rgba(0, 0, 0, 0.65);
   color: #fff;
   font-size: 0.72em;
-  padding: 2px 7px 2px 22px;  /* left padding makes room for the icon */
+  padding: 2px 7px 2px 22px; /* left padding makes room for the icon */
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
@@ -771,11 +787,11 @@ The tooltip text is driven by `data-label` attributes on each editable element. 
 
 **Where labels come from:**
 
-| Element | How `data-label` is set |
-|---|---|
-| `.edit_area` (free-text, datepicker) | Set directly in `row-template.html`, e.g. `data-label="file name"` |
-| `<select class="metadata_options">` | `makeDropdown(…, label)` / `makeMultiSelect(…, label)` in `server-functions.html` emit `data-label="…"` on the `<select>` |
-| `.metadata_option_display` | Copied from the adjacent `<select data-label>` by `editor.js` on page load |
+| Element                              | How `data-label` is set                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `.edit_area` (free-text, datepicker) | Set directly in `row-template.html`, e.g. `data-label="file name"`                                                        |
+| `<select class="metadata_options">`  | `makeDropdown(…, label)` / `makeMultiSelect(…, label)` in `server-functions.html` emit `data-label="…"` on the `<select>` |
+| `.metadata_option_display`           | Copied from the adjacent `<select data-label>` by `editor.js` on page load                                                |
 
 The `.metadata_option_display` div is injected by `editor.js` and does not exist in the server-rendered HTML, so it cannot get `data-label` from the template. `editor.js` copies it from the hidden `<select>` at initialisation time:
 
@@ -803,8 +819,6 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 > **Coding agents:** when re-saving the HTML from production, run a find/replace pass to restore all `data-label` attributes — the production server does not emit them. See the bulk PowerShell replacement commands used in the initial setup as a reference pattern.
 
 ---
-
-
 
 ### 2026-03-08: Hover edit tooltip system
 
