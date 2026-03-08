@@ -661,7 +661,11 @@
 
     function resultStatusAttribute(data, statusTransaction) {
       // setAssetStatus returns: ["Status for Asset \"name\" (#id) has been changed successfully to {status_label}"]
-      if (Array.isArray(data) && data[0] && data[0].indexOf("successfully") !== -1) {
+      if (
+        Array.isArray(data) &&
+        data[0] &&
+        data[0].indexOf("successfully") !== -1
+      ) {
         displayResultAttr(data[0], "success");
         // Update Status cell with display label
         $('tr[id="' + statusTransaction.assetid + '"]')
