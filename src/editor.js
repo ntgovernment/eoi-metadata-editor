@@ -54,6 +54,78 @@
       $select.hide();
     });
 
+    // ========== ACCESSIBILITY: Initialize focusable cells ==========
+    var initEditableCells = function () {
+      // Text and datepicker fields
+      $(".edit_area").each(function () {
+        var $el = $(this);
+        if (!$el.attr("tabindex")) {
+          $el.attr({
+            tabindex: "0",
+            role: "button",
+            "aria-label": $el.attr("data-label") || "editable field",
+          });
+        }
+      });
+
+      // Dropdown display cells
+      $(".metadata_option_display").each(function () {
+        var $el = $(this);
+        if (!$el.attr("tabindex")) {
+          $el.attr({
+            tabindex: "0",
+            role: "button",
+            "aria-label": $el.attr("data-label") || "select field",
+          });
+        }
+      });
+    };
+    initEditableCells();
+
+    // Helper: Attach focus trap to editing UI so Tab/Shift+Tab exits edit mode
+    var attachFocusTrap = function (
+      $editContainer,
+      $originalCell,
+      closeEditFn,
+    ) {
+      var focusableSelectors =
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+      var $focusables = $editContainer
+        .find(focusableSelectors)
+        .filter(":visible");
+
+      if ($focusables.length === 0) return;
+
+      var firstFocusable = $focusables.first();
+      var lastFocusable = $focusables.last();
+
+      $editContainer.on("keydown.focusTrap", function (e) {
+        if (e.keyCode === 9) {
+          // Tab key
+          var isShiftTab = e.shiftKey;
+          var activeEl = document.activeElement;
+
+          if (isShiftTab && activeEl === firstFocusable[0]) {
+            // Shift+Tab at start: close and return focus to cell
+            e.preventDefault();
+            closeEditFn();
+            $originalCell.focus();
+          } else if (!isShiftTab && activeEl === lastFocusable[0]) {
+            // Tab at end: close and move to next tabbable element
+            e.preventDefault();
+            closeEditFn();
+            // Focus returns to the cell, which is tabbable
+            $originalCell.focus();
+          }
+        }
+      });
+    };
+
+    // Helper: Detach focus trap from editing UI
+    var detachFocusTrap = function ($editContainer) {
+      $editContainer.off("keydown.focusTrap");
+    };
+
     $(document).on("click", ".metadata_option_display", function () {
       var $display = $(this);
       var $select = $display.nextAll("select.metadata_options").first();
@@ -89,9 +161,26 @@
           $saveBtn,
           $cancelBtn,
         );
-        $display.after(
-          $('<div class="single-dropdown"></div>').append($ddSelect, $actions),
+        var $dropdown = $('<div class="single-dropdown"></div>').append(
+          $ddSelect,
+          $actions,
         );
+        $display.after($dropdown);
+
+        // Attach focus trap for keyboard navigation
+        attachFocusTrap($dropdown, $display, function () {
+          // Close dropdown on Tab out
+          var originalVal = $select.data("original-val");
+          if (originalVal !== undefined) {
+            $select.val(originalVal);
+          }
+          detachFocusTrap($dropdown);
+          $dropdown.remove();
+          $display.text(getOptionDisplayText($select)).show();
+        });
+
+        // Set focus to dropdown select
+        $ddSelect.focus();
         return;
       }
 
@@ -129,9 +218,29 @@
         $saveBtn,
         $cancelBtn,
       );
-      $display.after(
-        $('<div class="multiselect-dropdown"></div>').append($list, $actions),
+      var $dropdown = $('<div class="multiselect-dropdown"></div>').append(
+        $list,
+        $actions,
       );
+      $display.after($dropdown);
+
+      // Attach focus trap for keyboard navigation
+      attachFocusTrap($dropdown, $display, function () {
+        // Close dropdown on Tab out
+        var originalVal = $select.data("original-val");
+        if (originalVal !== undefined) {
+          $select.val(originalVal);
+        }
+        detachFocusTrap($dropdown);
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
+      });
+
+      // Set focus to first checkbox
+      var $firstCb = $dropdown.find("input[type=checkbox]").first();
+      if ($firstCb.length) {
+        $firstCb.focus();
+      }
     });
 
     $(document).on(
@@ -153,8 +262,10 @@
         var value = $select.val() ? $select.val().join(";") : "";
         var assetid = $select.closest("tr").attr("id");
         var fieldid = $select.attr("data-metadatafieldid");
+        detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
+        $display.focus();
         submit(value, assetid, fieldid);
       },
     );
@@ -172,8 +283,10 @@
         if (originalVal !== undefined) {
           $select.val(originalVal);
         }
+        detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
+        $display.focus();
       },
     );
 
@@ -190,8 +303,10 @@
         var assetid = $select.closest("tr").attr("id");
         var fieldid = $select.attr("data-metadatafieldid");
         $select.val(newVal);
+        detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
+        $display.focus();
         submit(newVal, assetid, fieldid);
         // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
         var $row = $select.closest("tr");
@@ -224,8 +339,10 @@
         if (originalVal !== undefined) {
           $select.val(originalVal);
         }
+        detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
+        $display.focus();
       },
     );
 
@@ -245,17 +362,28 @@
         if (originalVal !== undefined) {
           $select.val(originalVal);
         }
+        detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
       });
     });
 
+    // Add Enter key handler to open dropdowns
+    $(document).on("keydown", ".metadata_option_display", function (e) {
+      if (e.keyCode === 13) {
+        // Enter key
+        e.preventDefault();
+        $(this).click();
+      }
+    });
+
     // Inline click-to-edit: replaces Jeditable dependency.
     // onSave(value, $el) is called when the user clicks Save.
+    // Keyboard accessible: Enter to activate, Escape to cancel, Tab/Shift+Tab to exit.
     function makeEditable($elems, onSave) {
       $elems.css({ cursor: "pointer", minHeight: "1em" });
-      $elems.on("click.inlineEdit", function () {
-        var $el = $(this);
+
+      var activateEdit = function ($el) {
         if ($el.find("textarea").length) return; // already editing
         var savedText = $el.text().trim();
 
@@ -275,21 +403,46 @@
         $el.empty().append($textarea, $actions);
         $textarea.focus();
 
+        var closeEdit = function () {
+          $el.empty().text(savedText);
+          detachFocusTrap($el);
+          $el.focus();
+        };
+
         $cancelBtn.on("click", function (e) {
           e.stopPropagation();
-          $el.empty().text(savedText);
+          closeEdit();
         });
 
         $saveBtn.on("click", function (e) {
           e.stopPropagation();
+          detachFocusTrap($el);
           onSave($textarea.val(), $el);
         });
 
         $textarea.on("keydown.inlineEdit", function (e) {
           if (e.keyCode === 27) {
-            $el.empty().text(savedText);
+            // Escape
+            e.preventDefault();
+            closeEdit();
           }
         });
+
+        // Attach focus trap for Tab/Shift+Tab navigation
+        attachFocusTrap($el, $el, closeEdit);
+      };
+
+      $elems.on("click.inlineEdit", function () {
+        activateEdit($(this));
+      });
+
+      // Add Enter key handler
+      $elems.on("keydown.inlineEdit", function (e) {
+        if (e.keyCode === 13) {
+          // Enter key
+          e.preventDefault();
+          activateEdit($(this));
+        }
       });
     }
 
@@ -338,8 +491,7 @@
         minHeight: "1em",
       });
 
-      // Click handler to show datepicker input
-      $field.on("click", function () {
+      var activateDatepicker = function () {
         if ($field.find("input").length > 0) return; // Already editing
 
         var currentText = $field.text().trim();
@@ -376,7 +528,10 @@
         });
 
         $input.datepicker("show");
-        $input.focus();
+        // Set focus after datepicker initializes
+        setTimeout(function () {
+          $input.focus();
+        }, 50);
 
         // When a date is chosen in the picker, record it but don't submit yet
         $input.on("changeDate", function (e) {
@@ -386,10 +541,16 @@
           }
         });
 
-        $cancelBtn.on("click", function (e) {
-          e.stopPropagation();
+        var closeDate = function () {
           $input.datepicker("destroy");
           $field.empty().text(currentText);
+          detachFocusTrap($field);
+          $field.focus();
+        };
+
+        $cancelBtn.on("click", function (e) {
+          e.stopPropagation();
+          closeDate();
         });
 
         $saveBtn.on("click", function (e) {
@@ -401,8 +562,36 @@
           var fieldid = $field.attr("data-metadatafieldid");
           $input.datepicker("destroy");
           $field.empty().text(displayDate);
+          detachFocusTrap($field);
+          $field.focus();
           submit(isoDate, assetid, fieldid);
         });
+
+        // Add Escape handler to close datepicker
+        $input.on("keydown.datepickerEsc", function (e) {
+          if (e.keyCode === 27) {
+            // Escape
+            e.preventDefault();
+            closeDate();
+          }
+        });
+
+        // Attach focus trap for Tab/Shift+Tab navigation
+        attachFocusTrap($field, $field, closeDate);
+      };
+
+      // Click handler to show datepicker input
+      $field.on("click", function () {
+        activateDatepicker();
+      });
+
+      // Add Enter key handler to activate datepicker
+      $field.on("keydown", function (e) {
+        if (e.keyCode === 13) {
+          // Enter key
+          e.preventDefault();
+          activateDatepicker();
+        }
       });
     });
 

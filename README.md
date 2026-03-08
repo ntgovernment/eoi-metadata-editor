@@ -9,6 +9,8 @@ The editor supports:
 - **Bootstrap datepicker** fields (configured with autoclose, today button, and linked behavior) that provide Save/Cancel actions
 - Automatic coercion of multi‑select values to semicolon‑delimited strings before submission
 
+- **Full keyboard and screen‑reader accessibility** – all editable cells are now focusable via Tab, activatable with Enter, and navigable with keyboard controls (Escape cancels, Tab/Shift+Tab exits, etc.). ARIA roles/labels are injected automatically, and visual focus indicators highlight hovered or focused cells.
+
 All interactive logic lives in `src/editor.js`; when you need to adjust behavior (e.g. add a new field type, tweak datepicker options, or change how a control submits), edit that file and rebuild. The datepicker initialization specifically lives around line 256 and can be customized via its options object.
 
 For datepicker tweaks:

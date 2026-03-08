@@ -28,8 +28,17 @@
   background: #e5e5e5;
 }
 
+/* Keyboard focus styling for accessibility */
+.edit_area:focus-visible,
+.metadata_option_display:focus-visible {
+  outline: 2px solid #003d82;
+  outline-offset: 2px;
+}
+
 .edit_area:hover::before,
-.metadata_option_display:hover::before {
+.metadata_option_display:hover::before,
+.edit_area:focus-visible::before,
+.metadata_option_display:focus-visible::before {
   content: "\f044";
   font-family: "Font Awesome 5 Pro", sans-serif;
   font-weight: 300;
@@ -45,7 +54,9 @@
 }
 
 .edit_area:hover::after,
-.metadata_option_display:hover::after {
+.metadata_option_display:hover::after,
+.edit_area:focus-visible::after,
+.metadata_option_display:focus-visible::after {
   content: "Edit " attr(data-label);
   position: absolute;
   bottom: 100%;
@@ -145,4 +156,25 @@ table.dataTable thead td {
 .ntgc-btn.ntgc-btn--tertiary[data-action="cancel"]::before,
 .ntgc-btn.ntgc-btn--tertiary[data-action="cancel"]:hover::before {
   display: none;
+}
+
+/* Focus styles for nested interactive elements during editing */
+button:focus-visible,
+.form-control:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #003d82;
+  outline-offset: 0px;
+}
+
+/* Checkbox and label focus styles for multi-select */
+.multiselect-list label:has(input:focus-visible) {
+  background-color: #f0f0ff;
+  border-radius: 2px;
+  padding: 2px;
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid #003d82;
 }

@@ -82,11 +82,24 @@ Key points for future developers:
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
 - To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions .btn-primary`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
 
+## Accessibility and interaction behaviour
+
+A major 2026 update added **full keyboard accessibility** to every editable cell. Key points:
+
+- All `.edit_area` and `.metadata_option_display` divs gain `tabindex="0"`, `role="button"` and an `aria-label` generated from `data-label`.
+- Users can Tab through cells, press **Enter** to activate an inline editor or dropdown, and use **Escape** to cancel edits.
+- During editing the code installs a focus trap that keeps **Tab**/ **Shift+Tab** within the current editor; moving past the last focusable element closes the editor and returns focus to the cell.
+- Visual focus indicators (navy outlines) appear on hovered or focused cells; the existing hover tooltip also appears when a cell has keyboard focus.
+- All dynamically created controls (textarea, save/cancel buttons, `<select>`, checkboxes, datepicker input) support standard focus outlines, so keyboard users can track focus during editing.
+
+The implementation lives entirely in `src/editor.js` around the existing `makeEditable()` function and the dropdown/date logic. Any new field type should follow the same accessibility pattern: use `activateEdit()` helpers, call `attachFocusTrap()` if the UI has multiple focusable elements, and ensure focus returns to the origin cell on close.
+
 ## Interaction behaviour and editing guidelines
 
 Most logic that translates a user interaction into an API call lives in `src/editor.js`. When adding or modifying a field type, search for the following patterns:
 
 - **Save/Cancel button style** – every editable control uses the same pair of buttons for consistency. The HTML is constructed in JavaScript, not hard‑coded in the HTML page. The convention is:
+
   ```js
   $('<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
       <span class="fal fa-save"></span> Save
@@ -96,6 +109,7 @@ Most logic that translates a user interaction into an API call lives in `src/edi
       Cancel
     </button>');
   ```
+
   - **Icon tags** always use `<span>` rather than `<i>` for FA5 compatibility.
   - The Save button has a pill-shaped border radius equal to its height; the cancel button has no icon and does not move on hover (the right-arrow pseudo‑element is suppressed by an override rule in `eoi-metadata-editor.css`).
   - Padding‑X is intentionally small (`0.5rem` on save, `0.25rem` on cancel) so the buttons don’t dominate narrow dropdown panels.
