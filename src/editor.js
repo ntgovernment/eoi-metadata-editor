@@ -41,11 +41,15 @@
       var $select = $(this);
       var $existing = $select.prev(".metadata_option_display");
       if ($existing.length) {
-        // Already in DOM (page saved with injected divs) — just refresh text
+        // Already in DOM (page saved with injected divs) — just refresh text.
+        // If no option is selected (e.g. "Archived" has no matching option),
+        // fall back to the server-rendered text rather than showing &nbsp;
+        var newText = getOptionDisplayText($select);
+        var fallback = $existing.text().trim();
         $existing
           .attr("data-label", $select.attr("data-label") || "")
           .css({ minHeight: "1em" })
-          .text(getOptionDisplayText($select));
+          .text(newText === "\u00a0" && fallback ? fallback : newText);
       } else {
         var $display = $('<div class="metadata_option_display"></div>')
           .attr("data-label", $select.attr("data-label") || "")
@@ -672,20 +676,23 @@
       ) {
         displayResultAttr(data[0], "success");
         // Update Status cell with display label and data-status attribute
-        var statusKey = statusTransaction.attrValue.toLowerCase().replace(/ /g, "-");
+        var statusKey = statusTransaction.attrValue
+          .toLowerCase()
+          .replace(/ /g, "-");
         var $row = $('tr[id="' + statusTransaction.assetid + '"]');
-        var $statusCell = $row.find('td.metadata-editor').eq(0);
-        var $statusDisplay = $statusCell.find('.metadata_option_display[data-label="status"]');
-        
+        var $statusCell = $row.find("td.metadata-editor").eq(0);
+        var $statusDisplay = $statusCell.find(
+          '.metadata_option_display[data-label="status"]',
+        );
+
         // Update text and data-status on both <td> and <div>
-        $statusDisplay.text(statusTransaction.attrValue).attr("data-status", statusKey);
+        $statusDisplay
+          .text(statusTransaction.attrValue)
+          .attr("data-status", statusKey);
         $statusCell.attr("data-status", statusKey);
-        
+
         if (dtTable) {
-          dtTable
-            .row($row[0])
-            .invalidate("dom")
-            .draw(false);
+          dtTable.row($row[0]).invalidate("dom").draw(false);
         }
       } else {
         var msg = Array.isArray(data)

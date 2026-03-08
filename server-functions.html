@@ -95,13 +95,16 @@
 
         // Try to find matching status code from current value
         // Current value might be: numeric code (e.g., "16") or label text (e.g., "Live")
+        // Also handle "Archived" (with 'd') matching "Archive" (without 'd')
         var currentStatusCode = '';
         var currentLower = String(currentStatusValue).toLowerCase().trim();
         
         Object.keys(statusOptions).forEach(function (code) {
             var codeLower = String(code).toLowerCase();
             var labelLower = String(statusOptions[code]).toLowerCase();
-            if (codeLower === currentLower || labelLower === currentLower) {
+            if (codeLower === currentLower || 
+                labelLower === currentLower || 
+                (labelLower + 'd') === currentLower) {
                 currentStatusCode = code;
             }
         });
