@@ -55,6 +55,8 @@
     $(document).on("click", ".metadata_option_display", function () {
       var $display = $(this);
       var $select = $display.nextAll("select.metadata_options").first();
+      var isMultiple = $select.prop("multiple");
+      var fieldid = $select.attr("data-metadatafieldid");
       // Store original value so Cancel can restore it
       var currentVal = $select.val();
       $select.data(
@@ -62,9 +64,50 @@
         Array.isArray(currentVal) ? currentVal.slice() : currentVal,
       );
       $display.hide();
-      // Build a fresh checkbox dropdown on each open
+
+      if (!isMultiple) {
+        // Single-select (Agency): build a native <select> dropdown popup
+        var $ddSelect = $(
+          '<select class="form-control single-dropdown-select"></select>',
+        );
+        $select.find("option").each(function () {
+          var $opt = $("<option></option>")
+            .val($(this).val())
+            .text($(this).text());
+          if ($(this).is(":selected")) $opt.prop("selected", true);
+          $ddSelect.append($opt);
+        });
+        var $saveBtn = $(
+          '<button type="button" class="btn btn-sm btn-primary">Save</button>',
+        );
+        var $cancelBtn = $(
+          '<button type="button" class="btn btn-sm btn-secondary">Cancel</button>',
+        );
+        var $actions = $('<div class="single-dropdown-actions"></div>').append(
+          $saveBtn,
+          $cancelBtn,
+        );
+        $display.after(
+          $('<div class="single-dropdown"></div>').append($ddSelect, $actions),
+        );
+        return;
+      }
+
+      // Multiselect: build checkbox list
+      // For field 446182 (Advertise), restrict options to WoG + current Agency
+      var allowedVals = null;
+      if (fieldid === "446182") {
+        var $row = $select.closest("tr");
+        var agencyVal = $row
+          .find('select.metadata_options[data-metadatafieldid="445640"]')
+          .val();
+        allowedVals = agencyVal ? ["WoG", agencyVal] : ["WoG"];
+      }
+
       var $list = $('<div class="multiselect-list"></div>');
       $select.find("option").each(function () {
+        if (allowedVals !== null && allowedVals.indexOf($(this).val()) === -1)
+          return;
         var $cb = $("<input type='checkbox'/>")
           .val($(this).val())
           .prop("checked", $(this).is(":selected"));
@@ -132,13 +175,66 @@
       },
     );
 
+    $(document).on(
+      "click",
+      ".single-dropdown-actions .btn-primary",
+      function (e) {
+        e.stopPropagation();
+        var $dropdown = $(this).closest(".single-dropdown");
+        if (!$dropdown.length) return;
+        var $display = $dropdown.prev(".metadata_option_display");
+        var $select = $dropdown.next("select.metadata_options");
+        var newVal = $dropdown.find(".single-dropdown-select").val();
+        var assetid = $select.closest("tr").attr("id");
+        var fieldid = $select.attr("data-metadatafieldid");
+        $select.val(newVal);
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
+        submit(newVal, assetid, fieldid);
+        // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
+        var $row = $select.closest("tr");
+        var $advertiseSelect = $row.find(
+          'select.metadata_options[data-metadatafieldid="446182"]',
+        );
+        if ($advertiseSelect.length) {
+          var advertiseVals = newVal ? ["WoG", newVal] : ["WoG"];
+          var advertiseStr = advertiseVals.join(";");
+          $advertiseSelect.val(advertiseVals);
+          var $advertiseDisplay = $advertiseSelect.prev(
+            ".metadata_option_display",
+          );
+          $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
+          submit(advertiseStr, assetid, "446182");
+        }
+      },
+    );
+
+    $(document).on(
+      "click",
+      ".single-dropdown-actions .btn-secondary",
+      function (e) {
+        e.stopPropagation();
+        var $dropdown = $(this).closest(".single-dropdown");
+        if (!$dropdown.length) return;
+        var $display = $dropdown.prev(".metadata_option_display");
+        var $select = $dropdown.next("select.metadata_options");
+        var originalVal = $select.data("original-val");
+        if (originalVal !== undefined) {
+          $select.val(originalVal);
+        }
+        $dropdown.remove();
+        $display.text(getOptionDisplayText($select)).show();
+      },
+    );
+
     $(document).on("click", function (e) {
       if (
-        $(e.target).closest(".metadata_option_display, .multiselect-dropdown")
-          .length
+        $(e.target).closest(
+          ".metadata_option_display, .multiselect-dropdown, .single-dropdown",
+        ).length
       )
         return;
-      $(".multiselect-dropdown").each(function () {
+      $(".multiselect-dropdown, .single-dropdown").each(function () {
         var $dropdown = $(this);
         var $display = $dropdown.prev(".metadata_option_display");
         var $select = $dropdown.next("select.metadata_options");

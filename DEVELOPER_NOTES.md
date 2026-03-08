@@ -71,6 +71,17 @@ Opens `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.html` i
 
 ---
 
+## Agency and advertise behaviour (2026 updates)
+
+A special rule was introduced in March 2026: when a user saves a new Agency selection (`job.agency`, field ID `445640`), the Advertise field (`job.advertise`, field ID `446182`) is automatically recalculated and saved as `WoG;{agencyCode}` (or just `WoG` when Agency is blank). The linkage is implemented client-side in `editor.js` using the hardcoded field ID strings `"445640"` and `"446182"` — there are no named constants.
+
+Key points for future developers:
+
+- **Agency** uses the single-select dropdown popup (`.single-dropdown` — see _Edit control types_ in Architecture). The user opens it by clicking the display label, chooses from a native `<select>`, then clicks Save. The `.single-dropdown-actions .btn-primary` handler calls `submit()` for Agency and then immediately derives `advertiseVals = newVal ? ["WoG", newVal] : ["WoG"]`, updates the Advertise `<select>` and its display label, and calls `submit()` for Advertise as well. There is no passive `change` listener.
+- **Advertise** uses the checkbox multiselect popup (`.multiselect-dropdown`). When it opens, the handler reads the row's current Agency `<select>` value and renders checkboxes **only** for `WoG` plus that agency code (or `WoG` only when Agency is blank). NTG Central (WoG) is **not** force-checked — the user can uncheck it freely before saving.
+- There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
+- To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions .btn-primary`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
+
 ## Interaction behaviour and editing guidelines
 
 Most logic that translates a user interaction into an API call lives in `src/editor.js`. When adding or modifying a field type, search for the following patterns:
@@ -311,6 +322,28 @@ Use this sequence for most changes to avoid regressions:
 
 ---
 
+## Metadata field ID reference
+
+| Column | Squiz field name | Field ID | Type | Notes |
+|---|---|---|---|---|
+| Position title | `job.title` | 445504 | Free text | Inline textarea edit |
+| Designation | `job.designation` | 445634 | Multi-select | All options unrestricted |
+| Close date | `job.closing-date` | 445509 | Date | Bootstrap datepicker; stored as ISO, displayed as DD/MM/YYYY |
+| Vacancy duration | `job.duration` | 445506 | Free text | Inline textarea edit |
+| Agency | `job.agency` | 445640 | Single-select | Saving also auto-saves Advertise (446182) |
+| Location | `job.location` | 445518 | Multi-select | All options unrestricted |
+| Where to advertise | `job.advertise` | 446182 | Multi-select | Options restricted to WoG + current Agency when editing |
+
+Attribute columns (not metadata — use `js_api.setAttribute`):
+
+| Column | `data-attributename` | Notes |
+|---|---|---|
+| File Name | `name` | All asset types |
+| Title | `title` | File assets only (Word, PDF, etc.) |
+| Title | `short_name` | Non-file assets; `short_name→title` retry fallback active in `resultAttr()` |
+
+---
+
 ## Architecture
 
 ### HTML Structure
@@ -398,21 +431,64 @@ $(".metadata_options").each(function () {
 });
 ```
 
+### Edit control types
+
+All three control types use explicit **Save/Cancel buttons** — there is no auto-save on `blur` or `change`. Clicking Cancel or anywhere outside the open popup restores the original value without submitting.
+
+| Control | CSS class | Used for | DOM inserted by |
+|---|---|---|---|
+| Textarea + buttons | _(inside `.edit_area`)_ | Free-text metadata, attributes | `makeEditable()` |
+| Native `<select>` + buttons | `.single-dropdown` | Single-select (Agency 445640) | `.metadata_option_display` click handler |
+| Checkbox panel + buttons | `.multiselect-dropdown` | Multi-select (Designation, Location, Advertise…) | `.metadata_option_display` click handler |
+| Datepicker `<input>` + buttons | _(inside `.edit_area[data-datepicker]`)_ | Close date (445509) | `.edit_area[data-datepicker]` click handler |
+
+**Single-select popup DOM (`.single-dropdown`):**
+
+```html
+<!-- injected after .metadata_option_display, before the hidden <select> -->
+<div class="single-dropdown">
+  <select class="form-control single-dropdown-select">
+    <option value=""></option>
+    <option value="DET" selected>Department of Education</option>
+    ...
+  </select>
+  <div class="single-dropdown-actions">
+    <button class="btn btn-sm btn-primary">Save</button>
+    <button class="btn btn-sm btn-secondary">Cancel</button>
+  </div>
+</div>
+```
+
+**Multiselect popup DOM (`.multiselect-dropdown`):**
+
+```html
+<!-- injected after .metadata_option_display, before the hidden <select> -->
+<div class="multiselect-dropdown">
+  <div class="multiselect-list">
+    <label><input type="checkbox" value="WoG"> NTG Central</label>
+    <label><input type="checkbox" value="DET"> Department of Education</label>
+    ...
+  </div>
+  <div class="metadata_option_actions">
+    <button class="btn btn-sm btn-primary">Save</button>
+    <button class="btn btn-sm btn-secondary">Cancel</button>
+  </div>
+</div>
+```
+
 ### Saving changes
 
-**Free-text fields** — saved on `blur` of the textarea created by Jeditable:
+All paths ultimately call:
 
 ```js
-$(document).on("blur", ".edit_area textarea", function () { ... });
+submit(value, assetid, fieldid);
 ```
 
-**Select / Multi-select fields** — saved on `change`:
+- `value` for multi-select fields must be a **semicolon-delimited string** (e.g. `"AO2;SP1"`), not an array — the Squiz Matrix API rejects arrays.
+- Single-select and free-text fields pass a plain string.
+- Date fields pass ISO format `YYYY-MM-DD`.
 
-```js
-$(document).on("change", ".metadata_options", function () { ... });
-```
-
-Both call `submit(value, assetid, fieldid)` which calls:
+`submit()` calls:
 
 ```js
 js_api.setMetadata({
@@ -422,6 +498,8 @@ js_api.setMetadata({
   dataCallback: result,
 });
 ```
+
+Attribute fields (name, title, short_name) use `submitAttr()` → `js_api.setAttribute()` instead.
 
 ### Closing-date field with datepicker
 
