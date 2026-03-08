@@ -457,6 +457,11 @@ Use this sequence for most changes to avoid regressions:
 | Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above                                                                                                                          |
 | Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
 | Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules                                                                                       |
+| Inline editing broken                              | Check `editor.js` for event delegation (handlers must use `$(document).on()`, not direct jQuery binding); see Event Delegation section                             |
+| Table sorting wrong on a column                     | Check `src/editor.js` DataTables init; if custom date format, add `columnDefs` entry with correct `targets` and sort-type render override                          |
+| Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                       |
+| Pagination controls not appearing                   | Verify DataTables initialization; check browser console for JS errors during `$('#myTable').DataTable({...})`                                                    |
+| Filtering / global search not working               | Verify `searching: true` in DataTables config; test by typing in the search box above the table                                                                   |
 
 ---
 
@@ -691,6 +696,299 @@ providing a polished calendar UI for dates.
 
 ---
 
+## DataTables integration (March 2026)
+
+The table now uses DataTables for client-side filtering, sorting, and pagination. This section explains the implementation so future developers can extend or troubleshoot it.
+
+### Overview
+
+DataTables is a jQuery plugin bundled in `src/datatables.lib.js`. It provides:
+- **Filtering** via a global search box (auto-generated)
+- **Sorting** by clicking any column header
+- **Pagination** with Previous/Next controls (10 rows per page by default)
+
+After any edit (metadata, attribute, or status), the affected row is re-rendered via `dtTable.row(tr).invalidate('dom').draw(false)` so pagination, search, and sort results stay current.
+
+### Initialization and configuration
+
+**Location:** `src/editor.js` around line 880.
+
+```javascript
+var dtTable = $('#myTable').DataTable({
+  paging: true,
+  pageLength: 10,
+  ordering: true,
+  searching: true,
+  info: true,
+  lengthChange: false,
+  pagingType: 'simple_numbers',
+  columnDefs: [
+    {
+      targets: '_all',
+      render: function(data, type, row, meta) {
+        // Extract visible text from cell divs for sorting/filtering
+        var $cell = $(row);
+        var displayText = $cell.find('.metadata_option_display').text() || 
+                          $cell.find('.edit_area').text() || 
+                          $cell.text();
+        if (type === 'display') {
+          return $cell.html(); // return full HTML for display
+        }
+        return displayText; // return plain text for sort/filter
+      }
+    },
+    {
+      targets: 6, // Close Date column override
+      render: function(data, type, row, meta) {
+        if (type === 'sort' || type === 'filter') {
+          // Convert DD/MM/YYYY to YYYYMMDD string for chronological sorting
+          var text = $(row).find('.metadata_option_display').text()
+                    || $(row).find('.edit_area').text()
+                    || $(row).text();
+          var parts = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          if (parts) {
+            return parts[3] + parts[2] + parts[1]; // YYYYMMDD
+          }
+          return text;
+        }
+        return $(row).html(); // display unchanged
+      }
+    }
+  ]
+});
+```
+
+### Understanding the render function
+
+The `render` function is called during DataTables initialization and after row invalidation. The `type` parameter indicates what the function is being called for:
+
+- **`'display'`** – Return HTML to render (unchanged from the DOM).
+- **`'sort'`** – Return a sortable key (string, numeric, ISO date, etc.).
+- **`'filter'`** – Return text to match against search queries.
+- **`'type'`** – Return a value for type detection (rare; defaults to text).
+
+**Key pattern:**
+```javascript
+if (type === 'display') {
+  return $(row).html(); // unchanged HTML
+}
+// For sort/filter, return clean text
+return $(row).find('.metadata_option_display').text() || ...;
+```
+
+### Column-specific rendering
+
+**Column 6 (Close Date):**
+
+The Close Date column displays dates in `DD/MM/YYYY` format (Australian) for human readability. Without special handling, DataTables would sort these lexicographically, yielding incorrect results:
+- Lexicographic: `"01/08/2025" < "25/12/2020"` ✗
+- Chronological: `"25/12/2020" < "01/08/2025"` ✓
+
+**Solution:** The second `columnDefs` entry (targets column 6) overrides the render function for sort/filter types:
+
+```javascript
+// Convert DD/MM/YYYY to YYYYMMDD for correct date ordering
+var parts = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+if (parts) {
+  return parts[3] + parts[2] + parts[1]; // YYYYMMDD (e.g., "20250201")
+}
+```
+
+This yields numeric-like strings that sort correctly while display remains `DD/MM/YYYY`. Search still works on the visible `DD/MM/YYYY` format (e.g., searching "12/2025" finds all December 2025 dates).
+
+**All other columns:**
+
+The first `columnDefs` entry (targets `'_all'`) extracts visible text for sort/filter. For dropdowns, this is the `.metadata_option_display` text (e.g., "Department of Children and Families"); for text fields, it's the `.edit_area` text. This makes sorting intuitive — users see alphabetical, not coded.
+
+### Row invalidation after saves
+
+When a cell is edited, the new value must be passed through the render function again so DataTables' internal cache is updated. This is done via:
+
+```javascript
+dtTable.row(tr).invalidate('dom').draw(false);
+```
+
+Where:
+- `tr` is the table row DOM element (usually `this.closest('tr')` in an event handler)
+- `'dom'` flag tells DataTables to re-read the row's HTML from the DOM
+- `draw(false)` redraws without resetting to page 1 or clearing sort order
+
+**Calls that invalidate:**
+
+1. **`refreshTableCell()`** — called after `submit()` succeeds (inline text save)
+   ```javascript
+   dtTable.row(addedRow).invalidate('dom').draw(false);
+   ```
+
+2. **`refreshTableCellsAttr()`** — called after `submitAttr()` succeeds (attribute save)
+   ```javascript
+   dtTable.row(tr).invalidate('dom').draw(false);
+   ```
+
+3. **`resultStatusAttribute()`** — called after status dropdown save via the result callback
+   ```javascript
+   dtTable.row(tr).invalidate('dom').draw(false);
+   ```
+
+If you add a new editable field type, add the invalidation call in the appropriate success callback.
+
+### Extending DataTables
+
+**Change page length:**
+Replace `pageLength: 10` in the initialization.
+
+**Add search delay** (e.g., search as user types with a 500ms debounce):
+Add `searchDelay: 500` to the config.
+
+**Change pagination style:**
+Replace `pagingType: 'simple_numbers'` with one of:
+- `'full'` — First, Previous, Next, Last buttons
+- `'full_numbers'` — First, Previous, 1 2 3 …, Next, Last
+- `'simple'` — Previous, Next only
+
+**Disable sorting or searching:**
+Set `ordering: false` or `searching: false`.
+
+See [DataTables documentation](https://datatables.net/reference/option/) for all available options.
+
+### Common issues and debugging
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Sorting is wrong (especially on dates) | Render function not overriding sort type for that column | Add a `columnDefs` entry with correct `targets` and return `YYYYMMDD` string |
+| Search returns no results after editing | Row not invalidated after save | Add `dtTable.row(tr).invalidate('dom').draw(false)` in post-save callback |
+| Inline editing broken after update | Event handlers not using delegation (see Event Delegation section) | Ensure all handlers use `$(document).on(event, selector, handler)` pattern |
+| Pagination controls missing | DataTables not initialized | Check browser console for errors during init; verify HTML table structure has correct ID |
+
+---
+
+## Event delegation pattern (required for DataTables interactivity)
+
+Inline editors and datepickers must use event delegation to survive DataTables' DOM rewrites. This section explains the pattern and why it matters.
+
+### The problem: direct binding breaks with DataTables
+
+When you bind event handlers directly to table cells before DataTables initialization:
+
+```javascript
+// ❌ BROKEN
+var $cells = $('.edit_area');
+$cells.on('click', function() { /* edit logic */ });
+```
+
+DataTables' render function rewrites cell HTML internally during initialization:
+```javascript
+// Inside DataTables (simplified)
+cell.innerHTML = renderedHTML; // new DOM nodes created
+```
+
+The new DOM nodes have no event handlers attached — they inherited from the old nodes cost extra memory and are lost when jQuery replaces the node reference.
+
+**Result:** Clicking edit areas no longer works.
+
+### The solution: event delegation
+
+Use document-level target delegation with a CSS selector:
+
+```javascript
+// ✅ CORRECT
+$(document).on('click', '.edit_area', function() { /* edit logic */ });
+```
+
+Now when any `.edit_area` is clicked, the handler on `document` catches the bubbling click event and executes the callback. When DataTables rewrites HTML, the _handler still lives on `document`_, unaffected. The new `.edit_area` elements will bubble clicks to the persistent handler.
+
+### Implementation in this codebase
+
+**Free-text and datepicker editing** — `makeEditable(selector, onSave)`:
+
+Located around line 400 in `src/editor.js`. Note that the function now takes a **CSS selector string**, not a jQuery object:
+
+```javascript
+function makeEditable(selector, onSave) {
+  // Bind handlers via delegation, not direct jQuery binding
+  $(document).on('click', selector, function() {
+    var $el = $(this);
+    // ... create textarea, show buttons ...
+    
+    $(document).on('click', '.edit_area_cancel', function(e) {
+      e.stopPropagation();
+      $el.empty().text(savedText);
+    });
+    
+    $(document).on('click', '.edit_area_save', function(e) {
+      e.stopPropagation();
+      onSave($textarea.val(), $el);
+    });
+  });
+}
+
+// Usage:
+makeEditable('.edit_area', onSaveCallback);  // selector string, not jQuery object
+```
+
+**Datepicker** — `activateDatepicker($field)`:
+
+Located around line 499 in `src/editor.js`. The function is extracted from a loop so it can be reused:
+
+```javascript
+function activateDatepicker($field) {
+  // $field is the specific .edit_area being activated
+  // Create and show datepicker input...
+  
+  // Use delegated handlers for buttons (survive DOM rewrites)
+  $(document).on('click', '.datepicker_save', function(e) {
+    e.stopPropagation();
+    // ... submit and close ...
+  });
+  
+  $(document).on('keydown', '.datepicker_close', function(e) {
+    // ... handle Escape key ...
+  });
+}
+
+// Called during initialization:
+$('.edit_area[data-datepicker="true"]').each(function() {
+  var $field = $(this);
+  // Just format and setup CSS; actual handlers are delegated
+});
+
+// Click handler for opening datepicker (delegated):
+$(document).on('click', '.edit_area[data-datepicker="true"]', function() {
+  activateDatepicker($(this));
+});
+```
+
+**Dropdown selects** — Already using delegation:
+
+Multi-select and single-select dropdowns already use delegated handlers:
+```javascript
+$(document).on('click', '.metadata_multiselect_display', function() { /* open dropdown */ });
+$(document).on('change', '.metadata_options', function() { /* on select change */ });
+```
+
+This is why they continued working seamlessly even after DataTables integration.
+
+### Rule for new interactive elements
+
+If you add a new field type that requires JavaScript interaction:
+
+1. **Never bind to individual cells directly** — even if you bind after DataTables init, future table re-renders will break the handlers.
+2. **Always use delegation:** `$(document).on(eventType, 'newSelector', handler)`.
+3. **Test with DataTables:** After the table sorts, searches, or paginates, verify that clicking the control still works.
+4. **Invalidate after save:** Call `dtTable.row(tr).invalidate('dom').draw(false)` so the updated value appears in search/sort immediately.
+
+### Why document-level delegation?
+
+Could we delegate off the table instead — e.g., `$('#myTable').on(...)`?
+
+Yes, but **document is safer** because:
+- If the entire table is re-rendered, `$('#myTable')` still refers to the old table
+- Document-level handlers work regardless of where the event originates
+- This pattern matches the existing dropdown handlers
+- It's the most resilient to future HTML restructuring
+
+---
+
 ## Squiz Matrix JS API — `setMetadata` field value formats
 
 > Reference: https://docs.squiz.net/matrix/version/latest/api/javascript-api/index.html
@@ -914,6 +1212,21 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 - `editor.js` now copies `data-label` from the hidden `<select>` onto the injected `.metadata_option_display` div on page load (both new-div and pre-existing-div code paths).
 - Bulk-updated `data-label` attributes and removed stale `cursor: pointer` inline styles across all rows in the rendered HTML via PowerShell `Set-Content` replacements.
 - Cursor (`pointer`) is now managed entirely by CSS on hover; removed all JS inline-style assignments of `cursor: pointer` for `.metadata_option_display` divs.
+
+### 2026-03-08: DataTables filtering, sorting, and pagination
+
+- Initialized DataTables in `editor.js` (around line 880) with paging (10 rows), simple_numbers pagination, global search, and column sorting enabled.
+- Added two `columnDefs` entries:
+  - `targets: '_all'` – render function extracts visible text (from `.metadata_option_display` for dropdowns, `.edit_area` for text) for sort/filter, returns full HTML for display.
+  - `targets: 6` (Close Date) – override to convert `DD/MM/YYYY` → `YYYYMMDD` string for sort/filter types, ensuring chronological ordering while display remains `DD/MM/YYYY`.
+- Added row invalidation calls in three post-save callbacks:
+  - `refreshTableCell()` – after inline text save: `dtTable.row(tr).invalidate('dom').draw(false)`
+  - `refreshTableCellsAttr()` – after attribute save: same invalidation
+  - `resultStatusAttribute()` – after status dropdown save (via result callback): same invalidation
+- Converted `makeEditable()` from direct jQuery binding to parameter-driven selector-based delegation: `makeEditable(selector_string, onSave)` now uses `$(document).on()` instead of `$(jqueryObject).on()`.
+- Extracted `activateDatepicker($field)` to a standalone function (was embedded in `.each()` loop); parametrized to accept the field element and moved all click/keydown handlers to delegated document-level bindings.
+- Updated two `makeEditable()` call sites to pass selector strings instead of jQuery objects.
+- Tested: sorting (including close-date chronological order), filtering, pagination, inline editing, datepicker all working.
 
 ### 2026-03-08: Consistent cell hover styles
 

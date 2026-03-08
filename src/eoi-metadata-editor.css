@@ -177,6 +177,13 @@ table.dataTable thead td {
   display: none;
 }
 
+/* Remove border radius from inputs and textareas */
+.form-control,
+input[type="text"],
+textarea {
+  border-radius: 0 !important;
+}
+
 /* Focus styles for nested interactive elements during editing */
 button:focus-visible,
 .form-control:focus-visible,

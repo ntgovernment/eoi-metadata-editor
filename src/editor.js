@@ -8,6 +8,8 @@
   var js_api = new Squiz_Matrix_API(apiOptions);
 
   $(document).ready(function () {
+    var dtTable;
+
     //Default selections
     $(".metadata_options").each(function () {
       var presetValue = $(this).attr("data-current");
@@ -399,8 +401,10 @@
     // Inline click-to-edit: replaces Jeditable dependency.
     // onSave(value, $el) is called when the user clicks Save.
     // Keyboard accessible: Enter to activate, Escape to cancel, Tab/Shift+Tab to exit.
-    function makeEditable($elems, onSave) {
-      $elems.css({ cursor: "pointer", minHeight: "1em" });
+    // selector must be a CSS selector string (not a jQuery object) so that
+    // document-level delegation works after DataTables replaces DOM nodes.
+    function makeEditable(selector, onSave) {
+      $(selector).css({ cursor: "pointer", minHeight: "1em" });
 
       var activateEdit = function ($el) {
         if ($el.find("textarea").length) return; // already editing
@@ -451,12 +455,13 @@
         attachFocusTrap($el, $el, closeEdit);
       };
 
-      $elems.on("click.inlineEdit", function () {
+      // Delegate from document so handlers survive DataTables DOM rewrite
+      $(document).on("click.inlineEdit", selector, function () {
         activateEdit($(this));
       });
 
       // Add Enter key handler
-      $elems.on("keydown.inlineEdit", function (e) {
+      $(document).on("keydown.inlineEdit", selector, function (e) {
         if (e.keyCode === 13) {
           // Enter key
           e.preventDefault();
@@ -466,7 +471,7 @@
     }
 
     makeEditable(
-      $(".metadata-editor .edit_area:not([data-datepicker='true'])"),
+      ".metadata-editor .edit_area:not([data-datepicker='true'])",
       function (value, $el) {
         var assetid = $el.closest("tr").attr("id");
         var fieldid = $el.attr("data-metadatafieldid");
@@ -495,124 +500,123 @@
       return ausDate; // Return original if not in expected format
     }
 
-    // Initialize Bootstrap Datepicker for closing date fields
-    $(".edit_area[data-datepicker='true']").each(function () {
-      var $field = $(this);
-      var currentValue = $field.text().trim();
+    // Initialize Bootstrap Datepicker for closing date fields.
+    // activateDatepicker is declared before .each() so it can also be called
+    // from delegated handlers that survive DataTables DOM rewrite.
+    var activateDatepicker = function ($field) {
+      if ($field.find("input").length > 0) return; // Already editing
 
-      // Convert ISO date to Australian format for display
-      var displayValue = isoToAustralian(currentValue);
-      $field.text(displayValue);
+      var currentText = $field.text().trim();
 
-      // Store original styling
-      $field.css({
-        cursor: "pointer",
-        minHeight: "1em",
+      // Create input element
+      var $input = $('<input type="text" class="form-control">');
+      $input.val(currentText);
+
+      var $saveBtn = $(
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
+      );
+      var $cancelBtn = $(
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
+      );
+      var $actions = $(
+        '<div style="margin-top:4px;display:flex;gap:4px;">',
+      ).append($saveBtn, $cancelBtn);
+
+      // Clear the div and add the input + buttons
+      $field.empty().append($input, $actions);
+
+      // Track what the datepicker has selected (may differ from typed value)
+      var selectedIsoDate = null;
+      var selectedDisplayDate = null;
+
+      // Initialize datepicker on the input
+      $input.datepicker({
+        format: "dd/mm/yyyy",
+        autoclose: true,
+        todayBtn: "linked",
+        todayHighlight: true,
+        orientation: "bottom auto",
+        container: "body",
       });
 
-      var activateDatepicker = function () {
-        if ($field.find("input").length > 0) return; // Already editing
+      $input.datepicker("show");
+      // Set focus after datepicker initializes
+      setTimeout(function () {
+        $input.focus();
+      }, 50);
 
-        var currentText = $field.text().trim();
-
-        // Create input element
-        var $input = $('<input type="text" class="form-control">');
-        $input.val(currentText);
-
-        var $saveBtn = $(
-          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save"><span class="fal fa-save"></span> Save</button>',
-        );
-        var $cancelBtn = $(
-          '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
-        );
-        var $actions = $(
-          '<div style="margin-top:4px;display:flex;gap:4px;">',
-        ).append($saveBtn, $cancelBtn);
-
-        // Clear the div and add the input + buttons
-        $field.empty().append($input, $actions);
-
-        // Track what the datepicker has selected (may differ from typed value)
-        var selectedIsoDate = null;
-        var selectedDisplayDate = null;
-
-        // Initialize datepicker on the input
-        $input.datepicker({
-          format: "dd/mm/yyyy",
-          autoclose: true,
-          todayBtn: "linked",
-          todayHighlight: true,
-          orientation: "bottom auto",
-          container: "body",
-        });
-
-        $input.datepicker("show");
-        // Set focus after datepicker initializes
-        setTimeout(function () {
-          $input.focus();
-        }, 50);
-
-        // When a date is chosen in the picker, record it but don't submit yet
-        $input.on("changeDate", function (e) {
-          if (e.date) {
-            selectedDisplayDate = $input.datepicker("getFormattedDate");
-            selectedIsoDate = australianToIso(selectedDisplayDate);
-          }
-        });
-
-        var closeDate = function () {
-          $input.datepicker("destroy");
-          $field.empty().text(currentText);
-          detachFocusTrap($field);
-          $field.focus();
-        };
-
-        $cancelBtn.on("click", function (e) {
-          e.stopPropagation();
-          closeDate();
-        });
-
-        $saveBtn.on("click", function (e) {
-          e.stopPropagation();
-          // Use picker-selected date if available, otherwise parse typed value
-          var displayDate = selectedDisplayDate || $input.val().trim();
-          var isoDate = selectedIsoDate || australianToIso(displayDate);
-          var assetid = $field.closest("tr").attr("id");
-          var fieldid = $field.attr("data-metadatafieldid");
-          $input.datepicker("destroy");
-          $field.empty().text(displayDate);
-          detachFocusTrap($field);
-          $field.focus();
-          submit(isoDate, assetid, fieldid);
-        });
-
-        // Add Escape handler to close datepicker
-        $input.on("keydown.datepickerEsc", function (e) {
-          if (e.keyCode === 27) {
-            // Escape
-            e.preventDefault();
-            closeDate();
-          }
-        });
-
-        // Attach focus trap for Tab/Shift+Tab navigation
-        attachFocusTrap($field, $field, closeDate);
-      };
-
-      // Click handler to show datepicker input
-      $field.on("click", function () {
-        activateDatepicker();
-      });
-
-      // Add Enter key handler to activate datepicker
-      $field.on("keydown", function (e) {
-        if (e.keyCode === 13) {
-          // Enter key
-          e.preventDefault();
-          activateDatepicker();
+      // When a date is chosen in the picker, record it but don't submit yet
+      $input.on("changeDate", function (e) {
+        if (e.date) {
+          selectedDisplayDate = $input.datepicker("getFormattedDate");
+          selectedIsoDate = australianToIso(selectedDisplayDate);
         }
       });
+
+      var closeDate = function () {
+        $input.datepicker("destroy");
+        $field.empty().text(currentText);
+        detachFocusTrap($field);
+        $field.focus();
+      };
+
+      $cancelBtn.on("click", function (e) {
+        e.stopPropagation();
+        closeDate();
+      });
+
+      $saveBtn.on("click", function (e) {
+        e.stopPropagation();
+        // Use picker-selected date if available, otherwise parse typed value
+        var displayDate = selectedDisplayDate || $input.val().trim();
+        var isoDate = selectedIsoDate || australianToIso(displayDate);
+        var assetid = $field.closest("tr").attr("id");
+        var fieldid = $field.attr("data-metadatafieldid");
+        $input.datepicker("destroy");
+        $field.empty().text(displayDate);
+        detachFocusTrap($field);
+        $field.focus();
+        submit(isoDate, assetid, fieldid);
+      });
+
+      // Add Escape handler to close datepicker
+      $input.on("keydown.datepickerEsc", function (e) {
+        if (e.keyCode === 27) {
+          // Escape
+          e.preventDefault();
+          closeDate();
+        }
+      });
+
+      // Attach focus trap for Tab/Shift+Tab navigation
+      attachFocusTrap($field, $field, closeDate);
+    };
+
+    // Convert ISO dates to Australian format for display and apply cursor style
+    $(".edit_area[data-datepicker='true']").each(function () {
+      var $field = $(this);
+      $field.text(isoToAustralian($field.text().trim()));
+      $field.css({ cursor: "pointer", minHeight: "1em" });
     });
+
+    // Delegate from document so handlers survive DataTables DOM rewrite
+    $(document).on(
+      "click.datepicker",
+      ".edit_area[data-datepicker='true']",
+      function () {
+        activateDatepicker($(this));
+      },
+    );
+    $(document).on(
+      "keydown.datepicker",
+      ".edit_area[data-datepicker='true']",
+      function (e) {
+        if (e.keyCode === 13) {
+          e.preventDefault();
+          activateDatepicker($(this));
+        }
+      },
+    );
 
     function submit(content, assetID, fieldid) {
       js_api.setMetadata({
@@ -671,6 +675,12 @@
         $('tr[id="' + statusTransaction.assetid + '"]')
           .find('.metadata_option_display[data-label="status"]')
           .text(statusTransaction.attrValue);
+        if (dtTable) {
+          dtTable
+            .row($('tr[id="' + statusTransaction.assetid + '"]')[0])
+            .invalidate("dom")
+            .draw(false);
+        }
       } else {
         var msg = Array.isArray(data)
           ? data[0]
@@ -705,6 +715,10 @@
         $cell.text(updatedData.value);
       }
 
+      if (dtTable) {
+        dtTable.row($cell.closest("tr")[0]).invalidate("dom").draw(false);
+      }
+
       return;
     }
 
@@ -720,7 +734,7 @@
 
     var transaction = {};
 
-    makeEditable($(".attribute-editor .edit_area"), function (value, $el) {
+    makeEditable(".attribute-editor .edit_area", function (value, $el) {
       transaction = {
         attrValue: value,
         assetid: $el.closest("tr").attr("id"),
@@ -785,6 +799,12 @@
         .removeClass("pending")
         .addClass(cls)
         .text(transaction.attrValue);
+      if (dtTable) {
+        dtTable
+          .row($('tr[id="' + transaction.assetid + '"]')[0])
+          .invalidate("dom")
+          .draw(false);
+      }
     }
 
     function displayResultAttr(msg, status) {
@@ -797,28 +817,48 @@
       }, 3000);
     }
 
-    // Setup - add a text input to each footer cell
-    // $('#myTable thead tr').clone(true).appendTo( '#myTable thead' );
-    // $('#myTable thead tr:eq(1) th').each( function (i) {
-    //     var title = $(this).text();
-    //     $(this).html( '<input type="text" placeholder="Search '+title+'" />' );
-
-    //     $( 'input', this ).on( 'keyup change', function () {
-    //         if ( table.column(i).search() !== this.value ) {
-    //             table
-    //                 .column(i)
-    //                 .search( this.value )
-    //                 .draw();
-    //         }
-    //     } );
-    // } );
-
-    // var table = $('#myTable').DataTable( {
-    //     "ordering": false,
-    //     orderCellsTop: true,
-    //     fixedHeader: true,
-    //     "lengthChange": false,
-    //     "paging": true
-    // } );
+    dtTable = $("#myTable").DataTable({
+      paging: true,
+      pageLength: 10,
+      pagingType: "simple_numbers",
+      ordering: true,
+      searching: true,
+      info: true,
+      columnDefs: [
+        {
+          // All columns: extract visible text for sort/filter; leave display HTML untouched
+          targets: "_all",
+          render: function (data, type) {
+            if (type === "display") return data;
+            var tmp = document.createElement("div");
+            tmp.innerHTML = data;
+            var el =
+              tmp.querySelector(".metadata_option_display") ||
+              tmp.querySelector(".edit_area");
+            return el ? el.textContent.trim() : tmp.textContent.trim();
+          },
+        },
+        {
+          // Close date (col 6): isoToAustralian() has already run, so the DOM
+          // text is DD/MM/YYYY. Lexicographic sort is wrong; convert to
+          // YYYYMMDD string for sort/type so rows order chronologically.
+          targets: 6,
+          render: function (data, type) {
+            if (type === "display") return data;
+            var tmp = document.createElement("div");
+            tmp.innerHTML = data;
+            var el = tmp.querySelector(".edit_area");
+            var text = el ? el.textContent.trim() : tmp.textContent.trim();
+            if (type === "sort" || type === "type") {
+              var parts = text.split("/");
+              if (parts.length === 3) {
+                return parts[2] + parts[1] + parts[0]; // e.g. "20250630"
+              }
+            }
+            return text; // filter: keep DD/MM/YYYY so users can search by date
+          },
+        },
+      ],
+    });
   });
 })(jQuery);
