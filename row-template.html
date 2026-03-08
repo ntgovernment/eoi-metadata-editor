@@ -8,12 +8,37 @@
     </td>
 
     <!--@@ Status @@-->
-    <td class="metadata-editor" style="background-color:%asset_status_colour%">
-        <script runat="server">
-            var currentstatus = "%asset_status_description%";
-            print('<div class="metadata_option_display" data-label="status">' + currentstatus + '</div>');
-            print(makeStatusDropdown(currentstatus, 'status'));
-        </script>
+    <script runat="server">
+        var currentstatus = "%asset_status_description%";
+        var statusMapping = { '1': 'Archive', '2': 'Under Construction', '16': 'Live', '64': 'Safe Editing' };
+        var statusCodeKey = '';
+        var currentLower = String(currentstatus).toLowerCase().trim();
+        
+        Object.keys(statusMapping).forEach(function(code) {
+            if (String(code).toLowerCase() === currentLower || String(statusMapping[code]).toLowerCase() === currentLower) {
+                statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
+            }
+        });
+        
+        var dataStatus = statusCodeKey ? ' data-status="' + statusCodeKey + '"' : '';
+        print('<td class="metadata-editor"' + dataStatus + ' style="background-color:%asset_status_colour%">');
+    </script>
+    <script runat="server">
+        var currentstatus = "%asset_status_description%";
+        var statusMapping = { '1': 'Archive', '2': 'Under Construction', '16': 'Live', '64': 'Safe Editing' };
+        var statusCodeKey = '';
+        var currentLower = String(currentstatus).toLowerCase().trim();
+        
+        Object.keys(statusMapping).forEach(function(code) {
+            if (String(code).toLowerCase() === currentLower || String(statusMapping[code]).toLowerCase() === currentLower) {
+                statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
+            }
+        });
+        
+        var dataStatus = statusCodeKey ? ' data-status="' + statusCodeKey + '"' : '';
+        print('<div class="metadata_option_display" data-label="status"' + dataStatus + '>' + currentstatus + '</div>');
+        print(makeStatusDropdown(currentstatus, 'status'));
+    </script>
     </td>
 
     <!--@@ File Name @@-->

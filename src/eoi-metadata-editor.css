@@ -25,7 +25,8 @@
 .edit_area:hover,
 .metadata_option_display:hover {
   cursor: pointer;
-  background: #e5e5e5;
+  background: transparent;
+  color: #20a030;
 }
 
 /* Keyboard focus styling for accessibility */
@@ -45,7 +46,7 @@
   position: absolute;
   bottom: 100%;
   left: 7px;
-  color: #fff;
+  color: #102040;
   font-size: 0.72em;
   line-height: 1.8;
   pointer-events: none;
@@ -61,13 +62,31 @@
   position: absolute;
   bottom: 100%;
   left: 0;
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
+  background: #ffffff;
+  color: #102040;
+  box-shadow: 0px 0px 0px 1px #102040 inset;
   font-size: 0.72em;
   padding: 2px 7px 2px 22px;
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
+}
+
+/* Status-specific background colors for entire cell */
+td[data-status="archive"] {
+  background-color: #e6d0c3 !important;
+}
+
+td[data-status="under-construction"] {
+  background-color: #d3e8f6 !important;
+}
+
+td[data-status="live"] {
+  background-color: #e4f1a5 !important;
+}
+
+td[data-status="safe-editing"] {
+  background-color: #f9d4dd !important;
 }
 
 table {

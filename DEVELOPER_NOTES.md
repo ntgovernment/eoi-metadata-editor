@@ -94,6 +94,76 @@ A major 2026 update added **full keyboard accessibility** to every editable cell
 
 The implementation lives entirely in `src/editor.js` around the existing `makeEditable()` function and the dropdown/date logic. Any new field type should follow the same accessibility pattern: use `activateEdit()` helpers, call `attachFocusTrap()` if the UI has multiple focusable elements, and ensure focus returns to the origin cell on close.
 
+## Status column colour system
+
+In early 2026 the Status field was overhauled to provide lighter background colours for each value and apply them to the entire table cell rather than just the editable label. The feature uses a `data-status` attribute added to both the `<td>` and the `.metadata_option_display` div, with values
+
+- `archive` (Archive)
+- `under-construction` (Under Construction)
+- `live` (Live)
+- `safe-editing` (Safe Editing)
+
+### HTML changes
+
+The server-side row template (`row-template.html`) now computes the status slug and injects it twice. The `<td>` element itself receives the attribute so the colour can fill the full cell, while the inner display div preserves it for consistency. Example:
+
+```html
+<script runat="server">
+  var currentstatus = "%asset_status_description%";
+  var statusMapping = { '1': 'Archive', '2': 'Under Construction', '16': 'Live', '64': 'Safe Editing' };
+  var statusCodeKey = '';
+  var currentLower = String(currentstatus).toLowerCase().trim();
+
+  Object.keys(statusMapping).forEach(function(code) {
+    if (String(code).toLowerCase() === currentLower ||
+        String(statusMapping[code]).toLowerCase() === currentLower) {
+      statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
+    }
+  });
+
+  var dataStatus = statusCodeKey ? ' data-status="' + statusCodeKey + '"' : '';
+  print('<td class="metadata-editor"' + dataStatus +
+        ' style="background-color:%asset_status_colour%">');
+</script>
+<script runat="server">
+  /* repeat mapping logic and then: */
+  print('<div class="metadata_option_display" data-label="status"' +
+        dataStatus + '>' + currentstatus + '</div>');
+  print(makeStatusDropdown(currentstatus, 'status'));
+</script>
+</td>
+```
+
+The `%asset_status_colour%` inline style is left in place to provide a fallback when the CSS is not loaded (e.g. during sanitisation). It is safe to leave because our newer CSS rules use `!important` to override it.
+
+### CSS rules
+
+The corresponding styles live in `src/eoi-metadata-editor.css` and target the `td[data-status]` selector. Colours are defined in the NTG Central palette and must remain low‑contrast for readability:
+
+```css
+/* Status-specific background colours for entire cell */
+td[data-status="archive"]         { background-color: #e6d0c3 !important; }
+td[data-status="under-construction"] { background-color: #d3e8f6 !important; }
+td[data-status="live"]            { background-color: #e4f1a5 !important; }
+td[data-status="safe-editing"]    { background-color: #f9d4dd !important; }
+```
+
+The same selectors also apply to `.metadata_option_display[data-status]` when the `<td>` is not present (e.g. in unit tests or isolated markup).
+
+#### Why both td and div?
+The `<td>` attribute ensures that the entire cell background is coloured, solving the complaint “the light background should apply to the cell as well, not just the editable”. The inner div is still annotated for two reasons:
+
+1. the hover/tooltip styles reference the div directly via `edit_area`/`metadata_option_display` selectors, so having the attribute there avoids adding more specificity,
+2. some legacy code reads `data-status` off the div when computing CSS classes for dropdown panels; duplicating the attribute avoids regressions.
+
+### Adding new statuses
+
+If new status values are added server-side, update `statusMapping` in both script blocks above and append the appropriate colour rules to the CSS file. The slug generation logic (`.toLowerCase().replace(/ /g, '-')`) should handle spaces automatically.
+
+### Developer agent guidance
+
+Coding agents looking to modify status behaviour can search for `data-status="` globally to find both HTML and CSS changes. The status‑pair updates are isolated and should not affect other features.
+
 ## Interaction behaviour and editing guidelines
 
 Most logic that translates a user interaction into an API call lives in `src/editor.js`. When adding or modifying a field type, search for the following patterns:
