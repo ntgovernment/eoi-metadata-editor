@@ -8,8 +8,12 @@
     </td>
 
     <!--@@ Status @@-->
-    <td style="background-color:%asset_status_colour%">
-        %asset_status_description%
+    <td class="metadata-editor" style="background-color:%asset_status_colour%">
+        <script runat="server">
+            var currentstatus = "%asset_status_description%";
+            print('<div class="metadata_option_display" data-label="status">' + currentstatus + '</div>');
+            print(makeStatusDropdown(currentstatus, 'status'));
+        </script>
     </td>
 
     <!--@@ File Name @@-->

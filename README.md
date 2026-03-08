@@ -6,6 +6,7 @@ The editor supports:
 
 - **Inline text editing** for attributes and metadata (click a field → textarea appears)
 - **Single‑select dropdowns and enhanced multi‑selects**. Multi‑selects no longer use the native `<select multiple>` control; instead clicking the value display opens a floating checkbox panel. Each item toggles with a click (no Ctrl/Cmd key required). Save/Cancel buttons commit or revert the change. Values in the display box are shown one per line.
+- **Attribute‑based dropdowns with numeric codes**. Certain asset attributes such as Status are rendered via the server helper `makeStatusDropdown` and store one of four numeric values (1 = Archive, 2 = Under Construction, 16 = Live, 64 = Safe Editing). Client logic calls `js_api.setAttribute` instead of `setMetadata` for these fields.
 - **Bootstrap datepicker** fields (configured with autoclose, today button, and linked behavior) that provide Save/Cancel actions
 - Automatic coercion of multi‑select values to semicolon‑delimited strings before submission
 

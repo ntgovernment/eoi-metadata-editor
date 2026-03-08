@@ -131,12 +131,18 @@
       var $select = $display.nextAll("select.metadata_options").first();
       var isMultiple = $select.prop("multiple");
       var fieldid = $select.attr("data-metadatafieldid");
+      var attrname = $select.attr("data-attributename");
+      var label = $select.attr("data-label");
       // Store original value so Cancel can restore it
       var currentVal = $select.val();
       $select.data(
         "original-val",
         Array.isArray(currentVal) ? currentVal.slice() : currentVal,
       );
+      // Copy data-label to display element if not already set
+      if (!$display.attr("data-label") && label) {
+        $display.attr("data-label", label);
+      }
       $display.hide();
 
       if (!isMultiple) {
@@ -166,6 +172,11 @@
           $actions,
         );
         $display.after($dropdown);
+
+        // Copy data-attributename to dropdown if it's an attribute field
+        if (attrname) {
+          $dropdown.attr("data-attributename", attrname);
+        }
 
         // Attach focus trap for keyboard navigation
         attachFocusTrap($dropdown, $display, function () {
@@ -302,26 +313,34 @@
         var newVal = $dropdown.find(".single-dropdown-select").val();
         var assetid = $select.closest("tr").attr("id");
         var fieldid = $select.attr("data-metadatafieldid");
+        var attrname = $select.attr("data-attributename");
         $select.val(newVal);
         detachFocusTrap($dropdown);
         $dropdown.remove();
         $display.text(getOptionDisplayText($select)).show();
         $display.focus();
-        submit(newVal, assetid, fieldid);
-        // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
-        var $row = $select.closest("tr");
-        var $advertiseSelect = $row.find(
-          'select.metadata_options[data-metadatafieldid="446182"]',
-        );
-        if ($advertiseSelect.length) {
-          var advertiseVals = newVal ? ["WoG", newVal] : ["WoG"];
-          var advertiseStr = advertiseVals.join(";");
-          $advertiseSelect.val(advertiseVals);
-          var $advertiseDisplay = $advertiseSelect.prev(
-            ".metadata_option_display",
+        // Handle attribute vs metadata fields
+        if (attrname) {
+          // Attribute field (e.g., Status)
+          submitStatusAttribute(newVal, assetid, attrname);
+        } else {
+          // Metadata field (e.g., Agency, Designation)
+          submit(newVal, assetid, fieldid);
+          // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
+          var $row = $select.closest("tr");
+          var $advertiseSelect = $row.find(
+            'select.metadata_options[data-metadatafieldid="446182"]',
           );
-          $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
-          submit(advertiseStr, assetid, "446182");
+          if ($advertiseSelect.length) {
+            var advertiseVals = newVal ? ["WoG", newVal] : ["WoG"];
+            var advertiseStr = advertiseVals.join(";");
+            $advertiseSelect.val(advertiseVals);
+            var $advertiseDisplay = $advertiseSelect.prev(
+              ".metadata_option_display",
+            );
+            $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
+            submit(advertiseStr, assetid, "446182");
+          }
         }
       },
     );
@@ -602,6 +621,55 @@
         field_val: content,
         dataCallback: result,
       });
+    }
+
+    // The Status attribute stores a numeric code on the asset. When the
+    // backend responds it returns that numeric value, so we need a lookup to
+    // convert it back to a human label before updating the cell display.
+    //
+    // The keys here mirror the options defined in server-functions.html's
+    // `makeStatusDropdown` helper. Keeping the mapping in one place avoids
+    // having to parse option text at runtime.
+    var statusCodeToLabel = {
+      1: "Archive",
+      2: "Under Construction",
+      16: "Live",
+      64: "Safe Editing",
+    };
+
+    function submitStatusAttribute(content, assetID, attrName) {
+      var statusTransaction = {
+        attrValue: statusCodeToLabel[content] || content,
+        assetid: assetID,
+        attrName: attrName,
+        statusCode: content,
+      };
+      js_api.setAttribute({
+        asset_id: assetID,
+        attr_name: attrName,
+        attr_val: content,
+        dataCallback: function (data) {
+          resultStatusAttribute(data, statusTransaction);
+        },
+        errorCallback: function () {
+          displayResultAttr("Save failed — please try again.", "error");
+        },
+      });
+    }
+
+    function resultStatusAttribute(data, statusTransaction) {
+      if (Array.isArray(data) && data[0].indexOf("successfully set") !== -1) {
+        displayResultAttr(data[0], "success");
+        // Update Status cell with display label
+        $('tr[id="' + statusTransaction.assetid + '"]')
+          .find('.metadata_option_display[data-label="status"]')
+          .text(statusTransaction.attrValue);
+      } else {
+        var msg = Array.isArray(data)
+          ? data[0]
+          : data.error || "An error occurred.";
+        displayResultAttr(msg, "error");
+      }
     }
 
     function result(data) {

@@ -918,19 +918,53 @@ Each row is a `<tr>` with Squiz Matrix keyword replacements:
 
 #### Field columns and their field IDs
 
-| Column                  | Type                     | Field ID / attribute                         | Template                                                 |
-| ----------------------- | ------------------------ | -------------------------------------------- | -------------------------------------------------------- |
-| ID                      | Link                     | —                                            | `%asset_assetid%`                                        |
-| Status                  | Display                  | —                                            | `%asset_status_description%`                             |
-| File Name               | Attribute (free-text)    | `name`                                       | `%asset_name%`                                           |
-| Title                   | Attribute (free-text)    | `short_name` (pages) / `title` (file assets) | see _File asset vs. page asset attributes_ below         |
-| Position title          | Metadata (free-text)     | `445504`                                     | `%asset_metadata_job.title%`                             |
-| Designation             | Metadata (multi-select)  | `445634`                                     | `makeMultiSelect()` + `%asset_metadata_job.designation%` |
-| Close date              | Metadata (free-text)     | `445509`                                     | `%asset_metadata_job.closing-date%`                      |
-| Vacancy duration        | Metadata (free-text)     | `445506`                                     | `%asset_metadata_job.duration%`                          |
-| Agency                  | Metadata (single-select) | `445640`                                     | `makeDropdown()` + `%asset_metadata_job.agency%`         |
-| Location                | Metadata (multi-select)  | `445518`                                     | `makeMultiSelect()` + `%asset_metadata_job.location%`    |
-| NTG Central / intranets | Metadata (multi-select)  | `446182`                                     | `makeMultiSelect()` + `%asset_metadata_job.advertise%`   |
+| Column                  | Type                      | Field ID / attribute                         | Template                                                 |
+| ----------------------- | ------------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| ID                      | Link                      | —                                            | `%asset_assetid%`                                        |
+| Status                  | Attribute (single-select) | `status` (asset attribute)                   | `makeStatusDropdown(%asset_asset_status%, 'status')`     |
+| File Name               | Attribute (free-text)     | `name`                                       | `%asset_name%`                                           |
+| Title                   | Attribute (free-text)     | `short_name` (pages) / `title` (file assets) | see _File asset vs. page asset attributes_ below         |
+| Position title          | Metadata (free-text)      | `445504`                                     | `%asset_metadata_job.title%`                             |
+| Designation             | Metadata (multi-select)   | `445634`                                     | `makeMultiSelect()` + `%asset_metadata_job.designation%` |
+| Close date              | Metadata (free-text)      | `445509`                                     | `%asset_metadata_job.closing-date%`                      |
+| Vacancy duration        | Metadata (free-text)      | `445506`                                     | `%asset_metadata_job.duration%`                          |
+| Agency                  | Metadata (single-select)  | `445640`                                     | `makeDropdown()` + `%asset_metadata_job.agency%`         |
+| Location                | Metadata (multi-select)   | `445518`                                     | `makeMultiSelect()` + `%asset_metadata_job.location%`    |
+| NTG Central / intranets | Metadata (multi-select)   | `446182`                                     | `makeMultiSelect()` + `%asset_metadata_job.advertise%`   |
+
+#### Status attribute dropdown
+
+The `status` field is an **asset attribute** rather than metadata. In the Matrix
+backend it stores a numeric code; editors only need four values:
+
+- 1 — Archive
+- 2 — Under Construction
+- 16 — Live
+- 64 — Safe Editing
+
+A new server-side helper `makeStatusDropdown(currentStatusValue, label)` emits a
+`<select>` with these four options and the correct `data-current` value. This
+function is called from `row-template.html` in place of the old read-only
+`%asset_status_description%` output.
+
+On the client side, `src/editor.js` distinguishes attribute-based fields by
+checking for a `data-attributename` attribute on the display element (see the
+click handler around line 131). When saving such a field the code now calls
+`submitStatusAttribute(assetid, value)` instead of the generic `submit()`
+function. This helper converts the string value into a numeric code and uses
+`js_api.setAttribute()` rather than `setMetadata()`.
+
+The server response also contains a numeric code; the `resultStatusAttribute`
+handler maps it back to a human-readable label using the `statusCodeToLabel`
+object (see around line 626 of `src/editor.js`). Keeping the mapping in one
+place simplifies maintenance if the set of valid statuses ever changes.
+
+If you add a new attribute dropdown type in future, follow this pattern:
+
+- Add a server-side helper similar to `makeStatusDropdown`
+- Include `data-attributename` on the generated `<select>`
+- In `editor.js` extend the click/save logic to call the appropriate submit
+  helper and response handler.
 
 #### File asset vs. page asset attributes
 
