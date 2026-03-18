@@ -8,13 +8,50 @@
     </td>
 
     <!--@@ Status @@-->
-    <td style="background-color:%asset_status_colour%">
-        %asset_status_description%
+    <script runat="server">
+        var currentstatus = "%asset_status_description%";
+        var statusMapping = { '1': 'Archive', '2': 'Under Construction', '16': 'Live', '64': 'Safe Editing' };
+        var statusCodeKey = '';
+        var currentLower = String(currentstatus).toLowerCase().trim();
+        
+        Object.keys(statusMapping).forEach(function(code) {
+            var labelLower = String(statusMapping[code]).toLowerCase();
+            // Match "Archive" or "Archived", "Live" or "Live", etc.
+            if (String(code).toLowerCase() === currentLower || 
+                labelLower === currentLower || 
+                (labelLower + 'd') === currentLower) {
+                statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
+            }
+        });
+        
+        var dataStatus = statusCodeKey ? ' data-status="' + statusCodeKey + '"' : '';
+        print('<td class="metadata-editor"' + dataStatus + ' style="background-color:%asset_status_colour%">');
+    </script>
+    <script runat="server">
+        var currentstatus = "%asset_status_description%";
+        var statusMapping = { '1': 'Archive', '2': 'Under Construction', '16': 'Live', '64': 'Safe Editing' };
+        var statusCodeKey = '';
+        var currentLower = String(currentstatus).toLowerCase().trim();
+        
+        Object.keys(statusMapping).forEach(function(code) {
+            var labelLower = String(statusMapping[code]).toLowerCase();
+            // Match "Archive" or "Archived", "Live" or "Live", etc.
+            if (String(code).toLowerCase() === currentLower || 
+                labelLower === currentLower || 
+                (labelLower + 'd') === currentLower) {
+                statusCodeKey = String(statusMapping[code]).toLowerCase().replace(/ /g, '-');
+            }
+        });
+        
+        var dataStatus = statusCodeKey ? ' data-status="' + statusCodeKey + '"' : '';
+        print('<div class="metadata_option_display" data-label="status"' + dataStatus + '>' + currentstatus + '</div>');
+        print(makeStatusDropdown(currentstatus, 'status'));
+    </script>
     </td>
 
     <!--@@ File Name @@-->
     <td class="attribute-editor">
-        <div class="edit_area" data-attributename="name">%asset_name%</div>
+        <div class="edit_area" data-attributename="name" data-label="file name">%asset_name%</div>
     </td>
 
     <!--@@ Title @@-->
@@ -23,16 +60,16 @@
             var typeCode = "%asset_type_code%";
             var fileTypes = ["file", "word_doc", "ms_word_doc", "ms_word_doc2007", "pdf_file", "ms_excel", "ms_excel2007", "ms_powerpoint", "ms_powerpoint2007", "text_file"];
             if (fileTypes.indexOf(typeCode) !== -1) {
-                print('<div class="edit_area" data-attributename="title">%asset_attribute_title%</div>');
+                print('<div class="edit_area" data-attributename="title" data-label="title">%asset_attribute_title%</div>');
             } else {
-                print('<div class="edit_area" data-attributename="short_name">%asset_short_name%</div>');
+                print('<div class="edit_area" data-attributename="short_name" data-label="title">%asset_short_name%</div>');
             }
         </script>
     </td>
 
     <!--@@ Position title @@-->
     <td class="metadata-editor">
-        <div class="edit_area" data-metadataFieldID="445504">%asset_metadata_job.title%</div>
+        <div class="edit_area" data-metadataFieldID="445504" data-label="position title">%asset_metadata_job.title%</div>
     </td>
 
     <!--@@ Designation @@-->
@@ -44,7 +81,7 @@
             var currentvalue = "%asset_metadata_job.designation%";
 
             //... creates a multi-select field based on metadata information - see global function in #911527
-            print(makeMultiSelect(metadatafield, currentvalue));
+            print(makeMultiSelect(metadatafield, currentvalue, 'designation'));
             print(`<span class="d-none">${currentvalue}</span>`);
 
         </script>
@@ -52,12 +89,12 @@
 
     <!--@@ Close date @@-->
     <td class="metadata-editor">
-        <div class="edit_area datepicker-field" data-metadataFieldID="445509" data-datepicker="true">%asset_metadata_job.closing-date%</div>
+        <div class="edit_area datepicker-field" data-metadataFieldID="445509" data-datepicker="true" data-label="close date">%asset_metadata_job.closing-date%</div>
     </td>
 
     <!--@@ Duration @@-->
     <td class="metadata-editor">
-        <div class="edit_area" data-metadataFieldID="445506">%asset_metadata_job.duration%</div>
+        <div class="edit_area" data-metadataFieldID="445506" data-label="duration">%asset_metadata_job.duration%</div>
     </td>
 
     <!--@@ Agency @@-->
@@ -69,7 +106,7 @@
             var currentvalue = "%asset_metadata_job.agency%";
 
             //... creates a dropdown field based on metadata information - see global function in #911527
-            print(makeDropdown(metadatafield, currentvalue));
+            print(makeDropdown(metadatafield, currentvalue, 'agency'));
             print(`<span class="d-none">${currentvalue}</span>`);
 
         </script>
@@ -86,7 +123,7 @@
             //print(currentvalue);
 
             //... creates a multi-select field based on metadata information - see global function in #911527
-            print(makeMultiSelect(metadatafield, currentvalue));
+            print(makeMultiSelect(metadatafield, currentvalue, 'location'));
             print(`<span class="d-none">${currentvalue}</span>`);
 
         </script>
@@ -104,7 +141,7 @@
             //print(currentvalue);
 
             //... creates a multi-select field based on metadata information - see global function in #911527
-            print(makeMultiSelect(metadatafield, currentvalue));
+            print(makeMultiSelect(metadatafield, currentvalue, 'NTG Central / intranets'));
             print(`<span class="d-none">${currentvalue}</span>`);
 
         </script>
