@@ -276,7 +276,7 @@
           })
           .get();
         $select.val(checkedVals);
-        var value = $select.val() ? $select.val().join(";") : "";
+        var value = $select.val() ? $select.val().join("; ") : "";
         var assetid = $select.closest("tr").attr("id");
         var fieldid = $select.attr("data-metadatafieldid");
         detachFocusTrap($dropdown);
