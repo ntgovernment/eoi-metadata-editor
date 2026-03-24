@@ -835,6 +835,7 @@
       pageLength: 10,
       pagingType: "simple_numbers",
       ordering: true,
+      order: [[0, "desc"]],
       searching: true,
       info: true,
       // Custom dom: top ctrl div holds length+filter (hidden; JS moves them to

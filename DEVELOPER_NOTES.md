@@ -4,7 +4,30 @@
 
 This tool is a browser-based inline editor for Squiz Matrix asset metadata and attributes. It is developed locally using Vite as a dev server, serving a saved copy of the production page (`EOI metadata editor _ NTG Central.html`) with local asset files.
 
-Changes to interaction logic are made in `editor.js`, then deployed to the NTG Central Squiz Matrix instance. The HTML page itself is periodically re-saved from production and sanitised using the checklist below.
+Changes to interaction logic are made in `src/editor.js`, then deployed to the NTG Central Squiz Matrix instance. The HTML page itself is periodically re-saved from production and sanitised using the checklist below.
+
+---
+
+## Table of Contents
+
+- [References](#references)
+- [File Structure](#file-structure)
+- [Local Dev Environment](#local-dev-environment)
+- [HTML Sanitisation Checklist](#html-sanitisation-checklist) — run after every production re-save
+- [Architecture](#architecture) — jQuery triple-load problem, IIFE, JS API, HTML structure, edit controls, saving
+- [Metadata & Attribute Field Reference](#metadata-field-id-reference)
+- [DataTables Integration](#datatables-integration-march-2026) — init config, render functions, row invalidation, column filters
+- [Interaction Behaviour & Editing Guidelines](#interaction-behaviour-and-editing-guidelines) — makeEditable, datepicker, dropdowns
+- [Accessibility](#accessibility-and-interaction-behaviour) — keyboard nav, focus traps
+- [Hover Edit Tooltip](#hover-edit-tooltip)
+- [Status Column Colour System](#status-column-colour-system)
+- [Agency–Advertise Cross-Field Rule](#agency-and-advertise-behaviour-2026-updates)
+- [Event Delegation Pattern](#event-delegation-pattern-required-for-datatables-interactivity)
+- [Squiz Matrix Template Reference](#squiz-matrix-asset-listing-template)
+- [Squiz Matrix JS API Field Value Formats](#squiz-matrix-js-api--setmetadata-field-value-formats)
+- [Quick Start & Decision Guide](#quick-start-developers-and-coding-agents)
+- [Tooling Configuration](#tooling-configuration)
+- [Change History](#2026-03-08-hover-edit-tooltip-system)
 
 ---
 
@@ -77,10 +100,10 @@ A special rule was introduced in March 2026: when a user saves a new Agency sele
 
 Key points for future developers:
 
-- **Agency** uses the single-select dropdown popup (`.single-dropdown` — see _Edit control types_ in Architecture). The user opens it by clicking the display label, chooses from a native `<select>`, then clicks Save. The `.single-dropdown-actions .btn-primary` handler calls `submit()` for Agency and then immediately derives `advertiseVals = newVal ? ["WoG", newVal] : ["WoG"]`, updates the Advertise `<select>` and its display label, and calls `submit()` for Advertise as well. There is no passive `change` listener.
+- **Agency** uses the single-select dropdown popup (`.single-dropdown` — see _Edit control types_ in Architecture). The user opens it by clicking the display label, chooses from a native `<select>`, then clicks Save. The `.single-dropdown-actions [data-action='save']` handler calls `submit()` for Agency and then immediately derives `advertiseVals = newVal ? ["WoG", newVal] : ["WoG"]`, updates the Advertise `<select>` and its display label, and calls `submit()` for Advertise as well. There is no passive `change` listener.
 - **Advertise** uses the checkbox multiselect popup (`.multiselect-dropdown`). When it opens, the handler reads the row's current Agency `<select>` value and renders checkboxes **only** for `WoG` plus that agency code (or `WoG` only when Agency is blank). NTG Central (WoG) is **not** force-checked — the user can uncheck it freely before saving.
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
-- To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions .btn-primary`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
+- To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions [data-action='save']`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
 
 ## DataTables customisations and UI features
 
@@ -278,13 +301,17 @@ Most logic that translates a user interaction into an API call lives in `src/edi
   - the `submit` helper converts multiple selections to semicolon‑delimited strings as required by the API
 - Date fields (`.edit_area[data-datepicker="true"]`) are wrapped in a `div` that launches a Bootstrap datepicker input when clicked. The picker now also uses explicit **Save/Cancel** buttons (previously blur/auto‑submit). The chosen date is converted to ISO format for server submission.
 
-_New in 2026:_ multi‑select dropdowns use a checkbox panel instead of the native control. The panel is generated dynamically on each open and mirrors the `<option>` list. Developers can customise its CSS (`.multiselect-dropdown`, `.multiselect-list`) or modify the open/close logic in `editor.js` around line 70.
+_New in 2026:_ multi‑select dropdowns use a checkbox panel instead of the native control. The panel is generated dynamically on each open and mirrors the `<option>` list. Developers can customise its CSS (`.multiselect-dropdown`, `.multiselect-list`) or modify the open/close logic in `editor.js` around line 190.
 
 - Any new field type should follow the same UX: show a non‑editable label at rest and only commit when the user clicks Save.
 
 > **Important:** dropdowns and datepickers previously auto‑saved on `change`; this behaviour was changed in 2026 to avoid accidental updates. The code in `editor.js` assumes no `change` handler submits automatically.
 
-## The rest of this file continues with the HTML sanitisation checklist and other setup instructions.
+---
+
+## HTML Sanitisation Checklist
+
+Run this checklist from top to bottom every time the HTML page is re-saved from production. Steps can be automated with the provided PowerShell commands.
 
 ### 1. Remove `.download` extensions from asset filenames
 
@@ -393,7 +420,7 @@ The third load overwrites the global `$` and `jQuery` with a clean instance that
 })(jQuery);
 ```
 
-**Check:** `head -1 "EOI metadata editor _ NTG Central_files/editor.js"` should output `(function ($) {`.
+**Check:** `head -1 "src/editor.js"` should output `(function ($) {`.
 
 ---
 
@@ -406,8 +433,8 @@ The third load overwrites the global `$` and `jQuery` with a clean instance that
 ```js
 (function ($) {
   // create before framework scripts run
-  var apiOptions = [];
-  apiOptions.key = "9772315187";
+  var apiOptions = new Array();
+  apiOptions["key"] = "9772315187";
   var js_api = new Squiz_Matrix_API(apiOptions);
 
   $(document).ready(function () {
@@ -500,6 +527,25 @@ Set-Content $f $c -Encoding UTF8 -NoNewline
 
 ---
 
+### 10. Replace git_bridge URLs with local `./src/` paths
+
+**Why:** When the HTML is re-saved from production it will contain absolute `https://ntgcentral.nt.gov.au/__data/assets/git_bridge/...?h=<hash>` URLs for every file in `src/`. These point to a specific committed version and bypass any local uncommitted edits; Vite cannot intercept them. Using `./src/` paths lets Vite serve the working copy so that local changes take effect immediately without a commit/push cycle.
+
+**Find every git_bridge script/link** — there are typically 7 (3 CSS links + 4 JS scripts). `update-metadata.js` is loaded from a non-git-bridge production URL and must remain unchanged.
+
+**Fix (PowerShell):**
+
+```powershell
+$f = 'EOI metadata editor _ NTG Central.html'
+$c = Get-Content $f -Raw -Encoding UTF8
+$c = $c -replace 'https://ntgcentral\.nt\.gov\.au/__data/assets/git_bridge/[^/]+/[^/]+/src/([^?]+)\?h=[a-f0-9]+', './src/$1'
+Set-Content $f $c -Encoding UTF8 -NoNewline
+```
+
+**Check:** `grep -c "git_bridge" "EOI metadata editor _ NTG Central.html"` should output `0`.
+
+---
+
 ### Post-sanitisation smoke test
 
 After working through the checklist, start the dev server (`npm run dev`) and open the browser console. The following should be **absent**:
@@ -524,7 +570,7 @@ Use this sequence for most changes to avoid regressions:
 2. Edit only the source-of-truth file:
    - Template row markup → `row-template.html`
    - Select rendering helpers → `server-functions.html`
-   - Browser interactions and API calls → `EOI metadata editor _ NTG Central_files/editor.js`
+   - Browser interactions and API calls → `src/editor.js`
 3. If a metadata field is a multi-select, ensure it is rendered with `makeMultiSelect()`.
 4. Confirm `editor.js` submits multi-select values as `;`-joined strings.
 5. Apply the updated template in Squiz Matrix and regenerate the listing output.
@@ -634,9 +680,9 @@ This is a required invariant. If `editor.js` is ever rewritten without the IIFE 
 ### JS API initialisation (`editor.js`)
 
 ```js
-var options = new Array();
-options["key"] = "9772315187";
-var js_api = new Squiz_Matrix_API(options);
+var apiOptions = new Array();
+apiOptions["key"] = "9772315187";
+var js_api = new Squiz_Matrix_API(apiOptions);
 ```
 
 The API key must match the key configured on the JavaScript API asset in Squiz Matrix.
@@ -680,8 +726,10 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </select>
   <div class="single-dropdown-actions">
-    <button class="btn btn-sm btn-primary">Save</button>
-    <button class="btn btn-sm btn-secondary">Cancel</button>
+    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+      <span class="fal fa-save"></span> Save
+    </button>
+    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
   </div>
 </div>
 ```
@@ -697,8 +745,10 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </div>
   <div class="metadata_option_actions">
-    <button class="btn btn-sm btn-primary">Save</button>
-    <button class="btn btn-sm btn-secondary">Cancel</button>
+    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+      <span class="fal fa-save"></span> Save
+    </button>
+    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
   </div>
 </div>
 ```
@@ -711,7 +761,7 @@ All paths ultimately call:
 submit(value, assetid, fieldid);
 ```
 
-- `value` for multi-select fields must be a **semicolon-delimited string** (e.g. `"AO2;SP1"`), not an array — the Squiz Matrix API rejects arrays.
+- `value` for multi-select fields is a **semicolon-delimited string** (e.g. `"AO2; SP1"` with a space after the semicolon, as produced by `Array.join("; ")`). The Squiz Matrix API rejects arrays. Note: the Agency–Advertise sync path joins with `";"` (no space) — both forms are accepted by the server.
 - Single-select and free-text fields pass a plain string.
 - Date fields pass ISO format `YYYY-MM-DD`.
 
@@ -723,6 +773,10 @@ js_api.setMetadata({
   field_id: fieldid,
   field_val: content,
   dataCallback: result,
+  // Note: submit() currently has no errorCallback. API failures will be
+  // silent. submitAttr() and submitStatusAttribute() both have explicit
+  // errorCallbacks and should be used as the model if adding error handling
+  // to submit() in future.
 });
 ```
 
@@ -750,7 +804,7 @@ developers replicate the pattern or troubleshoot issues.
    ```
 2. **Library files** — include `bootstrap-datepicker.min.js` and
    `bootstrap-datepicker.min.css` alongside the existing local
-   static assets, and reference them in `eoi-metadata-editor.htm`.
+   static assets, and reference them in the HTML page.
 3. **Interaction logic** (in `editor.js`):
    - On page load convert any ISO date values to `DD/MM/YYYY` for
      display.
@@ -796,49 +850,55 @@ After any edit (metadata, attribute, or status), the affected row is re-rendered
 
 ### Initialization and configuration
 
-**Location:** `src/editor.js` around line 880.
+**Location:** `src/editor.js` around line 833.
 
 ```javascript
-var dtTable = $("#myTable").DataTable({
+dtTable = $("#myTable").DataTable({
   paging: true,
   pageLength: 10,
+  pagingType: "simple_numbers",
   ordering: true,
+  order: [[0, "desc"]], // ID column descending by default
   searching: true,
   info: true,
-  lengthChange: false,
-  pagingType: "simple_numbers",
+  // Custom dom: dt-top-ctrl holds the length selector and search box, both
+  // relocated by JS into the custom filter bar below the page heading.
+  // dt-bottom-row holds info (left) and paginate (right) via flexbox.
+  dom: '<"dt-top-ctrl"lf><t><"dt-bottom-row"ip>',
   columnDefs: [
     {
+      // All columns: extract plain text from .metadata_option_display or
+      // .edit_area for sort/filter; return raw HTML untouched for display.
       targets: "_all",
-      render: function (data, type, row, meta) {
-        // Extract visible text from cell divs for sorting/filtering
-        var $cell = $(row);
-        var displayText =
-          $cell.find(".metadata_option_display").text() ||
-          $cell.find(".edit_area").text() ||
-          $cell.text();
-        if (type === "display") {
-          return $cell.html(); // return full HTML for display
-        }
-        return displayText; // return plain text for sort/filter
+      render: function (data, type) {
+        if (type === "display") return data;
+        var tmp = document.createElement("div");
+        tmp.innerHTML = data;
+        var el =
+          tmp.querySelector(".metadata_option_display") ||
+          tmp.querySelector(".edit_area");
+        return el ? el.textContent.trim() : tmp.textContent.trim();
       },
     },
     {
-      targets: 6, // Close Date column override
-      render: function (data, type, row, meta) {
-        if (type === "sort" || type === "filter") {
-          // Convert DD/MM/YYYY to YYYYMMDD string for chronological sorting
-          var text =
-            $(row).find(".metadata_option_display").text() ||
-            $(row).find(".edit_area").text() ||
-            $(row).text();
-          var parts = text.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-          if (parts) {
-            return parts[3] + parts[2] + parts[1]; // YYYYMMDD
+      // Close date (col 6): isoToAustralian() has already run, so DOM text is
+      // DD/MM/YYYY. Lexicographic sort is wrong; convert to YYYYMMDD string
+      // for sort/type so rows order chronologically. Keep DD/MM/YYYY for filter
+      // so users can search by partial date string (e.g. "06/2025").
+      targets: 6,
+      render: function (data, type) {
+        if (type === "display") return data;
+        var tmp = document.createElement("div");
+        tmp.innerHTML = data;
+        var el = tmp.querySelector(".edit_area");
+        var text = el ? el.textContent.trim() : tmp.textContent.trim();
+        if (type === "sort" || type === "type") {
+          var parts = text.split("/");
+          if (parts.length === 3) {
+            return parts[2] + parts[1] + parts[0]; // e.g. "20250630"
           }
-          return text;
         }
-        return $(row).html(); // display unchanged
+        return text;
       },
     },
   ],
@@ -854,14 +914,20 @@ The `render` function is called during DataTables initialization and after row i
 - **`'filter'`** – Return text to match against search queries.
 - **`'type'`** – Return a value for type detection (rare; defaults to text).
 
-**Key pattern:**
+**Key pattern (actual implementation — uses native DOM, not jQuery):**
 
 ```javascript
-if (type === 'display') {
-  return $(row).html(); // unchanged HTML
+render: function (data, type) {
+  if (type === "display") return data; // pass raw HTML through unchanged
+
+  // For sort/filter: strip HTML and return plain text
+  var tmp = document.createElement("div");
+  tmp.innerHTML = data;
+  var el =
+    tmp.querySelector(".metadata_option_display") ||
+    tmp.querySelector(".edit_area");
+  return el ? el.textContent.trim() : tmp.textContent.trim();
 }
-// For sort/filter, return clean text
-return $(row).find('.metadata_option_display').text() || ...;
 ```
 
 ### Column-specific rendering
@@ -899,27 +965,33 @@ dtTable.row(tr).invalidate("dom").draw(false);
 
 Where:
 
-- `tr` is the table row DOM element (usually `this.closest('tr')` in an event handler)
+- `tr` is the table row DOM element — **always looked up by asset ID** (`$('tr[id="' + assetid + '"]')[0]`), never via `$cell.closest("tr")`. The metadata save callback only has the asset ID, not the cell reference.
 - `'dom'` flag tells DataTables to re-read the row's HTML from the DOM
 - `draw(false)` redraws without resetting to page 1 or clearing sort order
 
 **Calls that invalidate:**
 
-1. **`refreshTableCell()`** — called after `submit()` succeeds (inline text save)
+1. **`refreshTableCell()`** — called after `submit()` succeeds (inline text or datepicker save)
 
    ```javascript
-   dtTable.row(addedRow).invalidate("dom").draw(false);
+   var $row = $('tr[id="' + updatedData.assetid + '"]');
+   dtTable.row($row[0]).invalidate("dom").draw(false);
    ```
 
 2. **`refreshTableCellsAttr()`** — called after `submitAttr()` succeeds (attribute save)
 
    ```javascript
-   dtTable.row(tr).invalidate("dom").draw(false);
+   dtTable
+     .row($('tr[id="' + transaction.assetid + '"]')[0])
+     .invalidate("dom")
+     .draw(false);
    ```
 
-3. **`resultStatusAttribute()`** — called after status dropdown save via the result callback
+3. **`resultStatusAttribute()`** — called after status dropdown save
+
    ```javascript
-   dtTable.row(tr).invalidate("dom").draw(false);
+   var $row = $('tr[id="' + statusTransaction.assetid + '"]');
+   dtTable.row($row[0]).invalidate("dom").draw(false);
    ```
 
 If you add a new editable field type, add the invalidation call in the appropriate success callback.
@@ -999,77 +1071,89 @@ Now when any `.edit_area` is clicked, the handler on `document` catches the bubb
 
 **Free-text and datepicker editing** — `makeEditable(selector, onSave)`:
 
-Located around line 400 in `src/editor.js`. Note that the function now takes a **CSS selector string**, not a jQuery object:
+Located around line 410 in `src/editor.js`. The function takes a **CSS selector string**, not a jQuery object. Only the **activation** click is delegated; Save/Cancel buttons created inside the editor are bound directly (they are freshly created nodes that DataTables will never replace):
 
 ```javascript
 function makeEditable(selector, onSave) {
-  // Bind handlers via delegation, not direct jQuery binding
-  $(document).on("click", selector, function () {
-    var $el = $(this);
-    // ... create textarea, show buttons ...
+  var activateEdit = function ($el) {
+    var savedText = $el.text().trim();
+    var $textarea = $('<textarea class="form-control" rows="2">').val(savedText);
+    var $saveBtn = $('<button type="button" ...></button>');
+    var $cancelBtn = $('<button type="button" ...></button>');
+    $el.empty().append($textarea, $('...').append($saveBtn, $cancelBtn));
 
-    $(document).on("click", ".edit_area_cancel", function (e) {
+    // Direct binding — these nodes are new; DataTables won't replace them
+    $cancelBtn.on("click", function (e) {
       e.stopPropagation();
       $el.empty().text(savedText);
     });
-
-    $(document).on("click", ".edit_area_save", function (e) {
+    $saveBtn.on("click", function (e) {
       e.stopPropagation();
       onSave($textarea.val(), $el);
     });
+  };
+
+  // Delegated: activation survives DataTables DOM rewrite
+  $(document).on("click.inlineEdit", selector, function () {
+    activateEdit($(this));
+  });
+  $(document).on("keydown.inlineEdit", selector, function (e) {
+    if (e.keyCode === 13) activateEdit($(this));
   });
 }
 
 // Usage:
-makeEditable(".edit_area", onSaveCallback); // selector string, not jQuery object
+makeEditable(".metadata-editor .edit_area:not([data-datepicker='true'])", onSaveCallback);
 ```
 
 **Datepicker** — `activateDatepicker($field)`:
 
-Located around line 499 in `src/editor.js`. The function is extracted from a loop so it can be reused:
+Located around line 509 in `src/editor.js`. The **opening** click is delegated so it survives DataTables DOM rewrites. Inside `activateDatepicker`, Save/Cancel buttons are bound directly (freshly created nodes):
 
 ```javascript
-function activateDatepicker($field) {
-  // $field is the specific .edit_area being activated
-  // Create and show datepicker input...
+var activateDatepicker = function ($field) {
+  // Create input + Save/Cancel buttons, initialise Bootstrap datepicker...
 
-  // Use delegated handlers for buttons (survive DOM rewrites)
-  $(document).on("click", ".datepicker_save", function (e) {
-    e.stopPropagation();
-    // ... submit and close ...
+  // Direct binding — freshly created nodes; DataTables won't rewrite these
+  $cancelBtn.on("click", function (e) { e.stopPropagation(); closeDate(); });
+  $saveBtn.on("click",   function (e) { e.stopPropagation(); /* submit ISO date */ });
+  $input.on("keydown.datepickerEsc", function (e) {
+    if (e.keyCode === 27) closeDate(); // Escape
   });
+};
 
-  $(document).on("keydown", ".datepicker_close", function (e) {
-    // ... handle Escape key ...
-  });
-}
-
-// Called during initialization:
-$('.edit_area[data-datepicker="true"]').each(function () {
-  var $field = $(this);
-  // Just format and setup CSS; actual handlers are delegated
-});
-
-// Click handler for opening datepicker (delegated):
-$(document).on("click", '.edit_area[data-datepicker="true"]', function () {
+// Delegated: opening the picker survives DataTables DOM rewrite
+$(document).on("click.datepicker", ".edit_area[data-datepicker='true']", function () {
   activateDatepicker($(this));
 });
+$(document).on("keydown.datepicker", ".edit_area[data-datepicker='true']", function (e) {
+  if (e.keyCode === 13) activateDatepicker($(this)); // Enter
+});
 ```
 
-**Dropdown selects** — Already using delegation:
+**Dropdown selects** — all handlers are delegated:
 
-Multi-select and single-select dropdowns already use delegated handlers:
+Both single-select and multi-select dropdowns use delegated handlers. There is **no `change` listener** — all saves go through an explicit Save button:
 
 ```javascript
-$(document).on("click", ".metadata_multiselect_display", function () {
-  /* open dropdown */
-});
-$(document).on("change", ".metadata_options", function () {
-  /* on select change */
+// Open dropdown (single-select or multi-select)
+$(document).on("click", ".metadata_option_display", function () { /* build popup */ });
+
+// Multi-select: Save / Cancel
+$(document).on("click", ".metadata_option_actions [data-action='save']",   handler);
+$(document).on("click", ".metadata_option_actions [data-action='cancel']", handler);
+
+// Single-select: Save / Cancel
+$(document).on("click", ".single-dropdown-actions [data-action='save']",   handler);
+$(document).on("click", ".single-dropdown-actions [data-action='cancel']", handler);
+
+// Outside-click closes open dropdown without saving
+$(document).on("click", function (e) {
+  if (!$(e.target).closest(".metadata_option_display, .multiselect-dropdown, .single-dropdown").length) {
+    // restore original value, remove popup
+  }
 });
 ```
-
-This is why they continued working seamlessly even after DataTables integration.
 
 ### Rule for new interactive elements
 
@@ -1319,7 +1403,7 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 
 ### 2026-03-08: DataTables filtering, sorting, and pagination
 
-- Initialized DataTables in `editor.js` (around line 880) with paging (10 rows), simple_numbers pagination, global search, and column sorting enabled.
+- Initialized DataTables in `editor.js` (around line 833) with paging (10 rows), simple_numbers pagination, global search, column sorting, and `order: [[0, 'desc']]` (ID descending) enabled.
 - Added two `columnDefs` entries:
   - `targets: '_all'` – render function extracts visible text (from `.metadata_option_display` for dropdowns, `.edit_area` for text) for sort/filter, returns full HTML for display.
   - `targets: 6` (Close Date) – override to convert `DD/MM/YYYY` → `YYYYMMDD` string for sort/filter types, ensuring chronological ordering while display remains `DD/MM/YYYY`.
@@ -1615,7 +1699,7 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 4. **`data-current` stores a JSON array** for multi-select fields — use `JSON.parse()` to restore selections on page load, with a plain-string fallback for single-select fields.
 5. **The nonce token** is read from `<input type="hidden" id="token">` on the page — this is injected by Squiz Matrix and required for all API write operations.
 6. **The HTML page is a saved production page** — edit `row-template.html` and `server-functions.html` (and apply changes in the Squiz Matrix asset listing), not the saved HTML directly. The `makeDropdown` and `makeMultiSelect` helper functions live in the page design of asset `#911527`. After re-saving from production, run the HTML Sanitisation Checklist.
-7. **Never format Squiz template files** — `row-template.html`, `server-functions.html`, and `eoi-metadata-editor.htm` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
+7. **Never format Squiz template files** — `row-template.html`, `server-functions.html` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
 8. **File assets use `title`, not `short_name`** — never hardcode `data-attributename="short_name"` unconditionally in the row template. Always use the `%asset_type_code%` conditional (see _File asset vs. page asset attributes_) so file-type assets receive the correct attribute name.
 9. **`e.stopPropagation()` is required on inline edit buttons** — Cancel and Save buttons are children of the clickable `.edit_area` div. Without `stopPropagation`, clicks bubble to the parent and immediately re-open the editor.
 
