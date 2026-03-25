@@ -631,6 +631,9 @@
         field_id: fieldid,
         field_val: content,
         dataCallback: result,
+        errorCallback: function () {
+          displayResult("Save failed \u2014 please try again.", "error");
+        },
       });
     }
 
@@ -718,21 +721,29 @@
       if (!data.changes || !data.changes[0]) return;
       var updatedData = data.changes[0];
 
-      var $cell = $('tr[id="' + updatedData.assetid + '"]').find(
+      // Look up the row directly by asset ID so that multiselect fields
+      // (which have no .edit_area, only a .metadata_option_display) still
+      // get their DataTables cache invalidated correctly.
+      var $row = $('tr[id="' + updatedData.assetid + '"]');
+      if (!$row.length) return;
+
+      // For plain-text and date fields, also update the visible cell text.
+      var $cell = $row.find(
         '.edit_area[data-metadatafieldid="' + updatedData.fieldid + '"]',
       );
-
-      // Check if this is a datepicker field
-      if ($cell.attr("data-datepicker") === "true") {
-        // Convert ISO date to Australian format
-        var displayValue = isoToAustralian(updatedData.value);
-        $cell.text(displayValue);
-      } else {
-        $cell.text(updatedData.value);
+      if ($cell.length) {
+        // Check if this is a datepicker field
+        if ($cell.attr("data-datepicker") === "true") {
+          // Convert ISO date to Australian format
+          var displayValue = isoToAustralian(updatedData.value);
+          $cell.text(displayValue);
+        } else {
+          $cell.text(updatedData.value);
+        }
       }
 
       if (dtTable) {
-        dtTable.row($cell.closest("tr")[0]).invalidate("dom").draw(false);
+        dtTable.row($row[0]).invalidate("dom").draw(false);
       }
 
       return;
