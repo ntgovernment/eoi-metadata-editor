@@ -14,7 +14,7 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 - [File Structure](#file-structure)
 - [Local Dev Environment](#local-dev-environment)
 - [HTML Sanitisation Checklist](#html-sanitisation-checklist) — run after every production re-save
-- [Architecture](#architecture) — jQuery triple-load problem, IIFE, JS API, HTML structure, edit controls, saving
+- [Architecture](#architecture) — jQuery triple-load problem, IIFE, JS API, JS API methods, locking, HTML structure, edit controls, saving
 - [Metadata & Attribute Field Reference](#metadata-field-id-reference)
 - [DataTables Integration](#datatables-integration-march-2026) — init config, render functions, row invalidation, column filters
 - [Interaction Behaviour & Editing Guidelines](#interaction-behaviour-and-editing-guidelines) — makeEditable, datepicker, dropdowns
@@ -587,6 +587,7 @@ Use this sequence for most changes to avoid regressions:
 | Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above                                                                                                                          |
 | Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
 | Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules                                                                                       |
+| File Name save fails on PROD but works on DEV       | The `name` attribute requires explicit `acquireLock` on the "details" screen; see _Locking for the `name` attribute_ in Architecture and the 2026-03-25 bug fix    |
 | Inline editing broken                               | Check `editor.js` for event delegation (handlers must use `$(document).on()`, not direct jQuery binding); see Event Delegation section                             |
 | Table sorting wrong on a column                     | Check `src/editor.js` DataTables init; if custom date format, add `columnDefs` entry with correct `targets` and sort-type render override                          |
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
@@ -609,11 +610,11 @@ Use this sequence for most changes to avoid regressions:
 
 Attribute columns (not metadata — use `js_api.setAttribute`):
 
-| Column    | `data-attributename` | Notes                                                                       |
-| --------- | -------------------- | --------------------------------------------------------------------------- |
-| File Name | `name`               | All asset types                                                             |
-| Title     | `title`              | File assets only (Word, PDF, etc.)                                          |
-| Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()` |
+| Column    | `data-attributename` | Notes                                                                                                                         |
+| --------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| File Name | `name`               | All asset types; requires explicit `acquireLock` on "details" screen (see _Locking for the `name` attribute_ in Architecture) |
+| Title     | `title`              | File assets only (Word, PDF, etc.); server auto-locks "attributes" screen                                                     |
+| Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()`; server auto-locks "attributes" screen            |
 
 ---
 
@@ -687,6 +688,18 @@ var js_api = new Squiz_Matrix_API(apiOptions);
 
 The API key must match the key configured on the JavaScript API asset in Squiz Matrix.
 
+### JS API methods used by this editor
+
+| Method           | Purpose                                              | Called from                | Notes                                                                                |
+| ---------------- | ---------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| `setMetadata`    | Save metadata field value                            | `submit()`                 | All metadata fields (position title, designation, agency, location, advertise, etc.) |
+| `setAttribute`   | Save asset attribute value                           | `submitAttr()`             | `name`, `title`, `short_name`                                                        |
+| `setAssetStatus` | Change asset status (Live, Under Construction, etc.) | `submitStatusAttribute()`  | Accepts numeric status code                                                          |
+| `acquireLock`    | Acquire edit lock on an admin screen                 | `submitAttr()` (name only) | Required before `setAttribute('name', ...)` on PROD; `screen_name: "details"`        |
+| `releaseLock`    | Release edit lock on an admin screen                 | `releaseDetailLock()`      | Called after `setAttribute('name', ...)` completes (success or failure)              |
+
+> **Locking rule of thumb:** Custom attributes (`title`, `short_name`) auto-lock on the server. System attributes on the "details" screen (`name`) require explicit `acquireLock`/`releaseLock`. When in doubt, test on PROD — DEV auto-locks everything.
+
 ### Restoring pre-selected values on load
 
 ```js
@@ -726,10 +739,20 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </select>
   <div class="single-dropdown-actions">
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--secondary"
+      data-action="save"
+    >
       <span class="fal fa-save"></span> Save
     </button>
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--tertiary"
+      data-action="cancel"
+    >
+      Cancel
+    </button>
   </div>
 </div>
 ```
@@ -745,10 +768,20 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </div>
   <div class="metadata_option_actions">
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--secondary"
+      data-action="save"
+    >
       <span class="fal fa-save"></span> Save
     </button>
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--tertiary"
+      data-action="cancel"
+    >
+      Cancel
+    </button>
   </div>
 </div>
 ```
@@ -781,6 +814,37 @@ js_api.setMetadata({
 ```
 
 Attribute fields (name, title, short_name) use `submitAttr()` → `js_api.setAttribute()` instead.
+
+**Locking for the `name` attribute:**
+
+The `name` attribute is a system property that lives on the Squiz Matrix "details" admin screen. Unlike custom attributes (`title`, `short_name`) which live on the "attributes" screen, the server does **not** auto-acquire a lock for the "details" screen when `setAttribute` is called via the JS API. This causes `setAttribute('name', ...)` to fail on production with:
+
+```
+Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)
+```
+
+`submitAttr()` handles this by wrapping the `setAttribute` call in an explicit `acquireLock` / `releaseLock` cycle when `attrName === "name"`:
+
+```js
+if (transaction.attrName === "name") {
+  js_api.acquireLock({
+    asset_id: transaction.assetid,
+    screen_name: "details",
+    dataCallback: function () {
+      doSetAttribute();
+    },
+    errorCallback: function () {
+      /* show error, remove pending */
+    },
+  });
+} else {
+  doSetAttribute();
+}
+```
+
+`releaseLock` is called in all exit paths (success, error, and `errorCallback`) via the `releaseDetailLock()` helper to avoid orphaned locks. Other attributes (`title`, `short_name`) skip locking entirely — the server auto-locks the "attributes" screen for those.
+
+> **DEV vs PROD:** The development Squiz instance (`ntgcentral-dev.nt.gov.au`) is more permissive and auto-locks the "details" screen, so `setAttribute('name', ...)` works without explicit locking there. Production (`ntgcentral.nt.gov.au`) does not — the explicit lock is required.
 
 ### Closing-date field with datepicker
 
@@ -1077,10 +1141,12 @@ Located around line 410 in `src/editor.js`. The function takes a **CSS selector 
 function makeEditable(selector, onSave) {
   var activateEdit = function ($el) {
     var savedText = $el.text().trim();
-    var $textarea = $('<textarea class="form-control" rows="2">').val(savedText);
+    var $textarea = $('<textarea class="form-control" rows="2">').val(
+      savedText,
+    );
     var $saveBtn = $('<button type="button" ...></button>');
     var $cancelBtn = $('<button type="button" ...></button>');
-    $el.empty().append($textarea, $('...').append($saveBtn, $cancelBtn));
+    $el.empty().append($textarea, $("...").append($saveBtn, $cancelBtn));
 
     // Direct binding — these nodes are new; DataTables won't replace them
     $cancelBtn.on("click", function (e) {
@@ -1103,7 +1169,10 @@ function makeEditable(selector, onSave) {
 }
 
 // Usage:
-makeEditable(".metadata-editor .edit_area:not([data-datepicker='true'])", onSaveCallback);
+makeEditable(
+  ".metadata-editor .edit_area:not([data-datepicker='true'])",
+  onSaveCallback,
+);
 ```
 
 **Datepicker** — `activateDatepicker($field)`:
@@ -1115,20 +1184,33 @@ var activateDatepicker = function ($field) {
   // Create input + Save/Cancel buttons, initialise Bootstrap datepicker...
 
   // Direct binding — freshly created nodes; DataTables won't rewrite these
-  $cancelBtn.on("click", function (e) { e.stopPropagation(); closeDate(); });
-  $saveBtn.on("click",   function (e) { e.stopPropagation(); /* submit ISO date */ });
+  $cancelBtn.on("click", function (e) {
+    e.stopPropagation();
+    closeDate();
+  });
+  $saveBtn.on("click", function (e) {
+    e.stopPropagation(); /* submit ISO date */
+  });
   $input.on("keydown.datepickerEsc", function (e) {
     if (e.keyCode === 27) closeDate(); // Escape
   });
 };
 
 // Delegated: opening the picker survives DataTables DOM rewrite
-$(document).on("click.datepicker", ".edit_area[data-datepicker='true']", function () {
-  activateDatepicker($(this));
-});
-$(document).on("keydown.datepicker", ".edit_area[data-datepicker='true']", function (e) {
-  if (e.keyCode === 13) activateDatepicker($(this)); // Enter
-});
+$(document).on(
+  "click.datepicker",
+  ".edit_area[data-datepicker='true']",
+  function () {
+    activateDatepicker($(this));
+  },
+);
+$(document).on(
+  "keydown.datepicker",
+  ".edit_area[data-datepicker='true']",
+  function (e) {
+    if (e.keyCode === 13) activateDatepicker($(this)); // Enter
+  },
+);
 ```
 
 **Dropdown selects** — all handlers are delegated:
@@ -1137,19 +1219,41 @@ Both single-select and multi-select dropdowns use delegated handlers. There is *
 
 ```javascript
 // Open dropdown (single-select or multi-select)
-$(document).on("click", ".metadata_option_display", function () { /* build popup */ });
+$(document).on("click", ".metadata_option_display", function () {
+  /* build popup */
+});
 
 // Multi-select: Save / Cancel
-$(document).on("click", ".metadata_option_actions [data-action='save']",   handler);
-$(document).on("click", ".metadata_option_actions [data-action='cancel']", handler);
+$(document).on(
+  "click",
+  ".metadata_option_actions [data-action='save']",
+  handler,
+);
+$(document).on(
+  "click",
+  ".metadata_option_actions [data-action='cancel']",
+  handler,
+);
 
 // Single-select: Save / Cancel
-$(document).on("click", ".single-dropdown-actions [data-action='save']",   handler);
-$(document).on("click", ".single-dropdown-actions [data-action='cancel']", handler);
+$(document).on(
+  "click",
+  ".single-dropdown-actions [data-action='save']",
+  handler,
+);
+$(document).on(
+  "click",
+  ".single-dropdown-actions [data-action='cancel']",
+  handler,
+);
 
 // Outside-click closes open dropdown without saving
 $(document).on("click", function (e) {
-  if (!$(e.target).closest(".metadata_option_display, .multiselect-dropdown, .single-dropdown").length) {
+  if (
+    !$(e.target).closest(
+      ".metadata_option_display, .multiselect-dropdown, .single-dropdown",
+    ).length
+  ) {
     // restore original value, remove popup
   }
 });
@@ -1389,6 +1493,14 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 > **Coding agents:** when re-saving the HTML from production, run a find/replace pass to restore all `data-label` attributes — the production server does not emit them. See the bulk PowerShell replacement commands used in the initial setup as a reference pattern.
 
 ---
+
+### 2026-03-25: Explicit locking for `name` attribute (File Name column)
+
+- **Symptom:** Editing the File Name column on production (`ntgcentral.nt.gov.au`) always failed with `Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)`. The same edit worked on DEV (`ntgcentral-dev.nt.gov.au`). Both servers run the same Squiz Matrix version.
+- **Root cause:** The `name` attribute is a system property stored on the Squiz Matrix "details" admin screen. The JS API `setAttribute` function relies on the server to auto-acquire a write lock, but the production server does **not** auto-lock the "details" screen (only the "attributes" screen). DEV is more permissive and auto-locks both screens. Other attributes (`title`, `short_name`) live on the "attributes" screen and were unaffected.
+- **Fix in `editor.js`:** `submitAttr()` now detects `attrName === "name"` and wraps the `setAttribute` call in `js_api.acquireLock({ screen_name: "details" })` → `setAttribute` → `js_api.releaseLock({ screen_name: "details" })`. A new `releaseDetailLock()` helper is called in all exit paths (success, data error, and network error) to prevent orphaned locks. Non-`name` attributes skip locking entirely.
+- **Files changed:** `src/editor.js` — `submitAttr()` function and new `releaseDetailLock()` helper.
+- **Lesson:** When adding editing support for a new Squiz system attribute, test on both DEV and PROD. If the attribute lives on a screen other than "attributes", explicit `acquireLock`/`releaseLock` calls may be required.
 
 ### 2026-03-08: Hover edit tooltip system
 
@@ -1702,6 +1814,7 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 7. **Never format Squiz template files** — `row-template.html`, `server-functions.html` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
 8. **File assets use `title`, not `short_name`** — never hardcode `data-attributename="short_name"` unconditionally in the row template. Always use the `%asset_type_code%` conditional (see _File asset vs. page asset attributes_) so file-type assets receive the correct attribute name.
 9. **`e.stopPropagation()` is required on inline edit buttons** — Cancel and Save buttons are children of the clickable `.edit_area` div. Without `stopPropagation`, clicks bubble to the parent and immediately re-open the editor.
+10. **The `name` attribute requires explicit locking** — Unlike `title`/`short_name`, the `name` attribute lives on the Squiz "details" screen, which does not auto-lock on production. `submitAttr()` handles this with `acquireLock`/`releaseLock` when `attrName === "name"`. If a new system attribute from the "details" screen needs editing in future, follow the same pattern.
 
 ---
 
@@ -1723,3 +1836,4 @@ Run this after any metadata field or select-control change:
 - Attaching delegated handlers to `.metadata-editor` instead of `$(document)`: causes duplicate submissions.
 - Using `data-attributename="short_name"` unconditionally for the Title column: file-type assets (Word, PDF, etc.) will fail with `Attribute "short_name" does not exist`. Use the `%asset_type_code%` conditional in `row-template.html` and verify the type code list includes all file types in the listing.
 - Omitting `e.stopPropagation()` on inline edit action buttons: click events bubble to the `.edit_area` parent and immediately re-trigger the edit handler.
+- Calling `setAttribute('name', ...)` without acquiring a lock first: works on DEV but fails on PROD with `Attribute "name"(of type "text") could not be set`. The `name` attribute lives on the "details" screen which requires explicit locking on production. See `submitAttr()` in `editor.js`.

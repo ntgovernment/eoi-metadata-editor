@@ -758,30 +758,69 @@
     });
 
     function submitAttr(transaction) {
-      js_api.setAttribute({
-        asset_id: transaction.assetid,
-        attr_name: transaction.attrName,
-        attr_val: transaction.attrValue,
-        dataCallback: resultAttr,
-        errorCallback: function () {
-          displayResultAttr("Save failed \u2014 please try again.", "error");
-          $('tr[id="' + transaction.assetid + '"]')
-            .find(
-              '.edit_area[data-attributename="' + transaction.attrName + '"]',
-            )
-            .removeClass("pending");
-        },
-      });
+      var doSetAttribute = function () {
+        js_api.setAttribute({
+          asset_id: transaction.assetid,
+          attr_name: transaction.attrName,
+          attr_val: transaction.attrValue,
+          dataCallback: resultAttr,
+          errorCallback: function () {
+            releaseDetailLock(transaction);
+            displayResultAttr("Save failed \u2014 please try again.", "error");
+            $('tr[id="' + transaction.assetid + '"]')
+              .find(
+                '.edit_area[data-attributename="' + transaction.attrName + '"]',
+              )
+              .removeClass("pending");
+          },
+        });
+      };
+
+      // The "name" attribute lives on the "details" screen in Squiz Matrix.
+      // Unlike custom attributes, the server does not auto-acquire locks for
+      // this screen, so we must explicitly lock before writing.
+      if (transaction.attrName === "name") {
+        js_api.acquireLock({
+          asset_id: transaction.assetid,
+          screen_name: "details",
+          dataCallback: function () {
+            doSetAttribute();
+          },
+          errorCallback: function () {
+            displayResultAttr(
+              "Could not acquire lock \u2014 please try again.",
+              "error",
+            );
+            $('tr[id="' + transaction.assetid + '"]')
+              .find('.edit_area[data-attributename="name"]')
+              .removeClass("pending");
+          },
+        });
+      } else {
+        doSetAttribute();
+      }
+    }
+
+    function releaseDetailLock(transaction) {
+      if (transaction.attrName === "name") {
+        js_api.releaseLock({
+          asset_id: transaction.assetid,
+          screen_name: "details",
+        });
+      }
     }
 
     function resultAttr(data) {
       if (Array.isArray(data) && data[0].indexOf("successfully set") !== -1) {
+        releaseDetailLock(transaction);
         displayResultAttr(data[0], "success");
         refreshTableCellsAttr("success");
       } else {
         var msg = Array.isArray(data)
           ? data[0]
           : data.error || "An error occurred.";
+
+        releaseDetailLock(transaction);
 
         // File assets (Word, PDF, etc.) store their title as the "title"
         // attribute, not "short_name". If the page was rendered with the old
