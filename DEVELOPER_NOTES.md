@@ -116,13 +116,13 @@ Both the **File Name** cell (`data-attributename="name"`) and the **Document Tit
 <PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD
 ```
 
-| Part             | Source                                      | Notes                                                                               |
-| ---------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)                         |
-| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)                         |
-| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()`           |
-| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                                 |
-| Suffix           | Literal `"JD"`                              | Always appended                                                                     |
+| Part             | Source                                      | Notes                                                                     |
+| ---------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)               |
+| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)               |
+| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()` |
+| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                       |
+| Suffix           | Literal `"JD"`                              | Always appended                                                           |
 
 **Example:** `30689 SP1-SP2 Senior Practice Leader - Central DCDD JD`
 
@@ -134,14 +134,14 @@ Parts joined with **spaces**; empty segments filtered; double-spaces collapsed.
 <prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>
 ```
 
-| Part                 | Source                                      | Notes                                                                               |
-| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Prefix               | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                         |
-| Designation keys     | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                        |
-| Position title slug  | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`          |
-| Agency key           | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                                 |
-| Suffix               | Literal `"jd"`                              | Always appended before extension                                                    |
-| Extension            | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found      |
+| Part                | Source                                      | Notes                                                                         |
+| ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| Prefix              | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                   |
+| Designation keys    | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                  |
+| Position title slug | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`    |
+| Agency key          | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                           |
+| Suffix              | Literal `"jd"`                              | Always appended before extension                                              |
+| Extension           | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found |
 
 **Example:** `30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx`
 
@@ -153,10 +153,10 @@ Parts joined with **hyphens**; empty segments filtered; consecutive hyphens coll
 
 Applied identically for both cell types, using different source text and casing:
 
-| Cell         | Source text                       | SUPN match → | Digit match → | Fallback → |
-|---|---|---|---|---|
-| Document Title | File Name **display text**       | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"` |
-| File Name      | Current **textarea value**       | `"supn"`     | digits (e.g. `"30689"`) | `"pn"` |
+| Cell           | Source text                | SUPN match → | Digit match →           | Fallback → |
+| -------------- | -------------------------- | ------------ | ----------------------- | ---------- |
+| Document Title | File Name **display text** | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"`     |
+| File Name      | Current **textarea value** | `"supn"`     | digits (e.g. `"30689"`) | `"pn"`     |
 
 1. If source text matches `/supn|supernumerary/i` → use SUPN prefix (highest priority)
 2. Else if source text matches `/(?:\d{3,})/` → use the matched digit string
@@ -677,11 +677,11 @@ Use this sequence for most changes to avoid regressions:
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
 | Pagination controls not appearing                   | Verify DataTables initialization; check browser console for JS errors during `$('#myTable').DataTable({...})`                                                      |
 | Filtering / global search not working               | Verify `searching: true` in DataTables config; test by typing in the search box above the table                                                                    |
-| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                        |
-| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic      |
-| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                                 |
-| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                       |
-| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                  |
+| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                       |
+| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic    |
+| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                               |
+| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                      |
+| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                |
 
 ---
 
