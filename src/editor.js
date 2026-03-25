@@ -758,51 +758,65 @@
     });
 
     function submitAttr(transaction) {
-      var doSetAttribute = function () {
-        js_api.setAttribute({
-          asset_id: transaction.assetid,
-          attr_name: transaction.attrName,
-          attr_val: transaction.attrValue,
-          dataCallback: resultAttr,
-          errorCallback: function () {
-            releaseDetailLock(transaction);
-            displayResultAttr("Save failed \u2014 please try again.", "error");
-            $('tr[id="' + transaction.assetid + '"]')
-              .find(
-                '.edit_area[data-attributename="' + transaction.attrName + '"]',
-              )
-              .removeClass("pending");
-          },
-        });
-      };
+      js_api.setAttribute({
+        asset_id: transaction.assetid,
+        attr_name: transaction.attrName,
+        attr_val: transaction.attrValue,
+        dataCallback: resultAttr,
+        errorCallback: function () {
+          releaseDetailLock(transaction);
+          displayResultAttr("Save failed \u2014 please try again.", "error");
+          $('tr[id="' + transaction.assetid + '"]')
+            .find(
+              '.edit_area[data-attributename="' + transaction.attrName + '"]',
+            )
+            .removeClass("pending");
+        },
+      });
+    }
 
-      // The "name" attribute lives on the "details" screen in Squiz Matrix.
-      // Unlike custom attributes, the server does not auto-acquire locks for
-      // this screen, so we must explicitly lock before writing.
-      if (transaction.attrName === "name") {
-        js_api.acquireLock({
-          asset_id: transaction.assetid,
-          screen_name: "details",
-          dataCallback: function () {
-            doSetAttribute();
-          },
-          errorCallback: function () {
-            displayResultAttr(
-              "Could not acquire lock \u2014 please try again.",
-              "error",
-            );
-            $('tr[id="' + transaction.assetid + '"]')
-              .find('.edit_area[data-attributename="name"]')
-              .removeClass("pending");
-          },
-        });
-      } else {
-        doSetAttribute();
-      }
+    // The "name" attribute lives on the Squiz "details" admin screen. Some
+    // environments (PROD) do not auto-acquire a lock for that screen, so
+    // setAttribute fails with "could not be set". When resultAttr detects
+    // that error it retries through this function, which explicitly locks
+    // "details" before the second setAttribute attempt. DEV auto-locks so
+    // the first (unlocked) attempt succeeds there and this path is never hit.
+    function submitAttrWithLock(transaction) {
+      js_api.acquireLock({
+        asset_id: transaction.assetid,
+        screen_name: "details",
+        dataCallback: function () {
+          js_api.setAttribute({
+            asset_id: transaction.assetid,
+            attr_name: transaction.attrName,
+            attr_val: transaction.attrValue,
+            dataCallback: resultAttr,
+            errorCallback: function () {
+              releaseDetailLock(transaction);
+              displayResultAttr(
+                "Save failed \u2014 please try again.",
+                "error",
+              );
+              $('tr[id="' + transaction.assetid + '"]')
+                .find('.edit_area[data-attributename="name"]')
+                .removeClass("pending");
+            },
+          });
+        },
+        errorCallback: function () {
+          displayResultAttr(
+            "Could not acquire lock \u2014 please try again.",
+            "error",
+          );
+          $('tr[id="' + transaction.assetid + '"]')
+            .find('.edit_area[data-attributename="name"]')
+            .removeClass("pending");
+        },
+      });
     }
 
     function releaseDetailLock(transaction) {
-      if (transaction.attrName === "name") {
+      if (transaction.attrName === "name" && transaction._retriedWithLock) {
         js_api.releaseLock({
           asset_id: transaction.assetid,
           screen_name: "details",
@@ -821,6 +835,19 @@
           : data.error || "An error occurred.";
 
         releaseDetailLock(transaction);
+
+        // "name" attribute: PROD does not auto-lock the "details" screen,
+        // so the first (unlocked) attempt fails with "could not be set".
+        // Retry once with an explicit acquireLock on "details".
+        if (
+          transaction.attrName === "name" &&
+          !transaction._retriedWithLock &&
+          msg.indexOf("could not be set") !== -1
+        ) {
+          transaction._retriedWithLock = true;
+          submitAttrWithLock(transaction);
+          return;
+        }
 
         // File assets (Word, PDF, etc.) store their title as the "title"
         // attribute, not "short_name". If the page was rendered with the old

@@ -587,7 +587,7 @@ Use this sequence for most changes to avoid regressions:
 | Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above                                                                                                                          |
 | Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
 | Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules                                                                                       |
-| File Name save fails on PROD but works on DEV       | The `name` attribute requires explicit `acquireLock` on the "details" screen; see _Locking for the `name` attribute_ in Architecture and the 2026-03-25 bug fix    |
+| File Name save fails on PROD but works on DEV       | The `name` attribute uses a retry-with-lock pattern; see _Locking for the `name` attribute_ in Architecture and the 2026-03-25 change history entry               |
 | Inline editing broken                               | Check `editor.js` for event delegation (handlers must use `$(document).on()`, not direct jQuery binding); see Event Delegation section                             |
 | Table sorting wrong on a column                     | Check `src/editor.js` DataTables init; if custom date format, add `columnDefs` entry with correct `targets` and sort-type render override                          |
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
@@ -612,7 +612,7 @@ Attribute columns (not metadata — use `js_api.setAttribute`):
 
 | Column    | `data-attributename` | Notes                                                                                                                         |
 | --------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| File Name | `name`               | All asset types; requires explicit `acquireLock` on "details" screen (see _Locking for the `name` attribute_ in Architecture) |
+| File Name | `name`               | All asset types; uses retry-with-lock pattern for "details" screen (see _Locking for the `name` attribute_ in Architecture) |
 | Title     | `title`              | File assets only (Word, PDF, etc.); server auto-locks "attributes" screen                                                     |
 | Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()`; server auto-locks "attributes" screen            |
 
@@ -695,10 +695,10 @@ The API key must match the key configured on the JavaScript API asset in Squiz M
 | `setMetadata`    | Save metadata field value                            | `submit()`                 | All metadata fields (position title, designation, agency, location, advertise, etc.) |
 | `setAttribute`   | Save asset attribute value                           | `submitAttr()`             | `name`, `title`, `short_name`                                                        |
 | `setAssetStatus` | Change asset status (Live, Under Construction, etc.) | `submitStatusAttribute()`  | Accepts numeric status code                                                          |
-| `acquireLock`    | Acquire edit lock on an admin screen                 | `submitAttr()` (name only) | Required before `setAttribute('name', ...)` on PROD; `screen_name: "details"`        |
-| `releaseLock`    | Release edit lock on an admin screen                 | `releaseDetailLock()`      | Called after `setAttribute('name', ...)` completes (success or failure)              |
+| `acquireLock`    | Acquire edit lock on an admin screen                 | `submitAttrWithLock()`     | Used in retry path for `setAttribute('name', ...)` on PROD; `screen_name: "details"` |
+| `releaseLock`    | Release edit lock on an admin screen                 | `releaseDetailLock()`      | Only called when `_retriedWithLock` is true (lock was actually acquired)             |
 
-> **Locking rule of thumb:** Custom attributes (`title`, `short_name`) auto-lock on the server. System attributes on the "details" screen (`name`) require explicit `acquireLock`/`releaseLock`. When in doubt, test on PROD — DEV auto-locks everything.
+> **Locking rule of thumb:** Custom attributes (`title`, `short_name`) auto-lock on the server. The `name` attribute uses a retry-with-lock pattern: try without lock first (works on DEV), retry with `acquireLock`/`releaseLock` on failure (needed on PROD). Always test on **both** DEV and PROD — they have different auto-locking behaviour.
 
 ### Restoring pre-selected values on load
 
@@ -815,36 +815,31 @@ js_api.setMetadata({
 
 Attribute fields (name, title, short_name) use `submitAttr()` → `js_api.setAttribute()` instead.
 
-**Locking for the `name` attribute:**
+**Locking for the `name` attribute (retry-with-lock pattern):**
 
-The `name` attribute is a system property that lives on the Squiz Matrix "details" admin screen. Unlike custom attributes (`title`, `short_name`) which live on the "attributes" screen, the server does **not** auto-acquire a lock for the "details" screen when `setAttribute` is called via the JS API. This causes `setAttribute('name', ...)` to fail on production with:
+The `name` attribute is a system property that lives on the Squiz Matrix "details" admin screen. Unlike custom attributes (`title`, `short_name`) which live on the "attributes" screen, the production server does **not** auto-acquire a lock for the "details" screen when `setAttribute` is called via the JS API. This causes `setAttribute('name', ...)` to fail on production with:
 
 ```
 Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)
 ```
 
-`submitAttr()` handles this by wrapping the `setAttribute` call in an explicit `acquireLock` / `releaseLock` cycle when `attrName === "name"`:
+However, the DEV server auto-locks **all** screens — and calling `acquireLock` explicitly on DEV _interferes_ with this, causing `setAttribute('name', ...)` to fail there too. Because of this incompatibility, a **retry-with-lock** pattern is used instead of always locking:
 
-```js
-if (transaction.attrName === "name") {
-  js_api.acquireLock({
-    asset_id: transaction.assetid,
-    screen_name: "details",
-    dataCallback: function () {
-      doSetAttribute();
-    },
-    errorCallback: function () {
-      /* show error, remove pending */
-    },
-  });
-} else {
-  doSetAttribute();
-}
+1. `submitAttr()` calls `setAttribute` directly (no lock) — works on DEV.
+2. If the server returns a "could not be set" error for the `name` attribute, `resultAttr()` retries once via `submitAttrWithLock()`, which calls `acquireLock({ screen_name: "details" })` → `setAttribute` → `releaseLock` — needed on PROD.
+3. `releaseDetailLock()` only calls `releaseLock` when `transaction._retriedWithLock` is true (i.e. a lock was actually acquired).
+
+```
+submitAttr() → setAttribute (no lock)
+  ↓ success → done (DEV path)
+  ↓ "could not be set" for name → submitAttrWithLock()
+      ↓ acquireLock("details") → setAttribute → releaseLock (PROD path)
+  ↓ other error → show error
 ```
 
-`releaseLock` is called in all exit paths (success, error, and `errorCallback`) via the `releaseDetailLock()` helper to avoid orphaned locks. Other attributes (`title`, `short_name`) skip locking entirely — the server auto-locks the "attributes" screen for those.
+Other attributes (`title`, `short_name`) skip locking entirely — the server auto-locks the "attributes" screen for those.
 
-> **DEV vs PROD:** The development Squiz instance (`ntgcentral-dev.nt.gov.au`) is more permissive and auto-locks the "details" screen, so `setAttribute('name', ...)` works without explicit locking there. Production (`ntgcentral.nt.gov.au`) does not — the explicit lock is required.
+> **DEV vs PROD:** DEV (`ntgcentral-dev.nt.gov.au`) auto-locks all screens including "details" — explicit `acquireLock` _interferes_. PROD (`ntgcentral.nt.gov.au`) only auto-locks "attributes" — the `name` attribute needs an explicit lock. The retry pattern handles both transparently.
 
 ### Closing-date field with datepicker
 
@@ -1494,13 +1489,13 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 
 ---
 
-### 2026-03-25: Explicit locking for `name` attribute (File Name column)
+### 2026-03-25: Retry-with-lock for `name` attribute (File Name column)
 
 - **Symptom:** Editing the File Name column on production (`ntgcentral.nt.gov.au`) always failed with `Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)`. The same edit worked on DEV (`ntgcentral-dev.nt.gov.au`). Both servers run the same Squiz Matrix version.
-- **Root cause:** The `name` attribute is a system property stored on the Squiz Matrix "details" admin screen. The JS API `setAttribute` function relies on the server to auto-acquire a write lock, but the production server does **not** auto-lock the "details" screen (only the "attributes" screen). DEV is more permissive and auto-locks both screens. Other attributes (`title`, `short_name`) live on the "attributes" screen and were unaffected.
-- **Fix in `editor.js`:** `submitAttr()` now detects `attrName === "name"` and wraps the `setAttribute` call in `js_api.acquireLock({ screen_name: "details" })` → `setAttribute` → `js_api.releaseLock({ screen_name: "details" })`. A new `releaseDetailLock()` helper is called in all exit paths (success, data error, and network error) to prevent orphaned locks. Non-`name` attributes skip locking entirely.
-- **Files changed:** `src/editor.js` — `submitAttr()` function and new `releaseDetailLock()` helper.
-- **Lesson:** When adding editing support for a new Squiz system attribute, test on both DEV and PROD. If the attribute lives on a screen other than "attributes", explicit `acquireLock`/`releaseLock` calls may be required.
+- **Root cause:** The `name` attribute is a system property stored on the Squiz Matrix "details" admin screen. The JS API `setAttribute` function relies on the server to auto-acquire a write lock, but PROD does **not** auto-lock the "details" screen. DEV auto-locks all screens. Crucially, calling `acquireLock` explicitly on DEV _interferes_ with the auto-locking, so a lock-first approach breaks DEV.
+- **Fix in `editor.js`:** Retry-with-lock pattern. `submitAttr()` calls `setAttribute` directly (no lock) — this works on DEV. If the server returns a "could not be set" error for the `name` attribute, `resultAttr()` sets `transaction._retriedWithLock = true` and retries via `submitAttrWithLock()`, which does `acquireLock({ screen_name: "details" })` → `setAttribute` → `releaseLock`. `releaseDetailLock()` only releases when `_retriedWithLock` is true.
+- **Files changed:** `src/editor.js` — `submitAttr()`, new `submitAttrWithLock()`, `releaseDetailLock()`, `resultAttr()`.
+- **Lesson:** DEV and PROD have incompatible auto-locking behaviour. Always test attribute changes on **both** environments. Use retry-with-lock (not lock-first) to handle "details" screen differences.
 
 ### 2026-03-08: Hover edit tooltip system
 
