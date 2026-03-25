@@ -407,7 +407,7 @@
     // Keyboard accessible: Enter to activate, Escape to cancel, Tab/Shift+Tab to exit.
     // selector must be a CSS selector string (not a jQuery object) so that
     // document-level delegation works after DataTables replaces DOM nodes.
-    function makeEditable(selector, onSave) {
+    function makeEditable(selector, onSave, extraButtonsFactory) {
       $(selector).css({ cursor: "pointer", minHeight: "1em" });
 
       var activateEdit = function ($el) {
@@ -423,9 +423,12 @@
         var $cancelBtn = $(
           '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
         );
-        var $actions = $(
-          '<div style="margin-top:4px;display:flex;gap:4px;">',
-        ).append($saveBtn, $cancelBtn);
+        var $actions = $('<div style="margin-top:4px;display:flex;gap:4px;">');
+        if (extraButtonsFactory) {
+          var $extra = extraButtonsFactory($el, $textarea);
+          if ($extra) $actions.append($extra);
+        }
+        $actions.append($saveBtn, $cancelBtn);
 
         $el.empty().append($textarea, $actions);
         $textarea.focus();
@@ -747,15 +750,111 @@
 
     var transaction = {};
 
-    makeEditable(".attribute-editor .edit_area", function (value, $el) {
-      transaction = {
-        attrValue: value,
-        assetid: $el.closest("tr").attr("id"),
-        attrName: $el.attr("data-attributename"),
-      };
-      $el.attr("data-newvalue", value).addClass("pending");
-      submitAttr(transaction);
-    });
+    function autoRenameButtonFactory($el, $textarea) {
+      var attrName = $el.attr("data-attributename");
+      var isTitle = attrName === "title" || attrName === "short_name";
+      var isName = attrName === "name";
+      if (!isTitle && !isName) return null;
+
+      // Convert free text to a lowercase hyphenated slug
+      function slugify(str) {
+        return str
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
+
+      var $autoBtn = $(
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"><span class="fal fa-magic"></span> Auto</button>',
+      );
+
+      $autoBtn.on("click", function (e) {
+        e.stopPropagation();
+        var $row = $el.closest("tr");
+
+        // Shared field reads
+        var $desigSelect = $row.find("select[data-metadatafieldid='445634']");
+        var desigVals = $desigSelect.val() || [];
+
+        var $posTitleCell = $row.find(
+          ".edit_area[data-metadatafieldid='445504']",
+        );
+        var $posTitleTA = $posTitleCell.find("textarea");
+        var posTitle = (
+          $posTitleTA.length ? $posTitleTA.val() : $posTitleCell.text()
+        ).trim();
+
+        var $agencySelect = $row.find("select[data-metadatafieldid='445640']");
+        var agencyVal = $agencySelect.val() || "";
+
+        if (isTitle) {
+          // Document Title: "PREFIX DESIG-KEYS Position Title AGENCY JD"
+          var fileName = $row
+            .find(".edit_area[data-attributename='name']")
+            .text()
+            .trim();
+          var prefix;
+          if (/supn|supernumerary/i.test(fileName)) {
+            prefix = "SUPN";
+          } else {
+            var numMatch = /(\d{3,})/.exec(fileName);
+            prefix = numMatch ? numMatch[1] : "PN";
+          }
+          var designStr = desigVals
+            .map(function (v) {
+              return v.toUpperCase();
+            })
+            .join("-");
+          var agencyKey = agencyVal.toUpperCase();
+          var autoName = [prefix, designStr, posTitle, agencyKey, "JD"]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+          $textarea.val(autoName).focus();
+        } else {
+          // File Name: "prefix-desig-keys-position-title-agency-jd.ext"
+          var currentFileName = $textarea.val();
+          var extMatch = /(\.[ a-zA-Z0-9]+)$/.exec(currentFileName);
+          var ext = extMatch ? extMatch[1].toLowerCase() : "";
+          var fnPrefix;
+          if (/supn|supernumerary/i.test(currentFileName)) {
+            fnPrefix = "supn";
+          } else {
+            var fnNumMatch = /(\d{3,})/.exec(currentFileName);
+            fnPrefix = fnNumMatch ? fnNumMatch[1] : "pn";
+          }
+          var fnDesignStr = desigVals
+            .map(function (v) {
+              return v.toLowerCase();
+            })
+            .join("-");
+          var fnAgencyKey = agencyVal.toLowerCase();
+          var autoFileName =
+            [fnPrefix, fnDesignStr, slugify(posTitle), fnAgencyKey, "jd"]
+              .filter(Boolean)
+              .join("-")
+              .replace(/-{2,}/g, "-") + ext;
+          $textarea.val(autoFileName).focus();
+        }
+      });
+
+      return $autoBtn;
+    }
+
+    makeEditable(
+      ".attribute-editor .edit_area",
+      function (value, $el) {
+        transaction = {
+          attrValue: value,
+          assetid: $el.closest("tr").attr("id"),
+          attrName: $el.attr("data-attributename"),
+        };
+        $el.attr("data-newvalue", value).addClass("pending");
+        submitAttr(transaction);
+      },
+      autoRenameButtonFactory,
+    );
 
     function submitAttr(transaction) {
       js_api.setAttribute({
@@ -764,6 +863,7 @@
         attr_val: transaction.attrValue,
         dataCallback: resultAttr,
         errorCallback: function () {
+          releaseDetailLock(transaction);
           displayResultAttr("Save failed \u2014 please try again.", "error");
           $('tr[id="' + transaction.assetid + '"]')
             .find(
@@ -774,14 +874,79 @@
       });
     }
 
+    // The "name" attribute lives on the Squiz "details" admin screen. Some
+    // environments (PROD) do not auto-acquire a lock for that screen, so
+    // setAttribute fails with "could not be set". When resultAttr detects
+    // that error it retries through this function, which explicitly locks
+    // "details" before the second setAttribute attempt. DEV auto-locks so
+    // the first (unlocked) attempt succeeds there and this path is never hit.
+    function submitAttrWithLock(transaction) {
+      js_api.acquireLock({
+        asset_id: transaction.assetid,
+        screen_name: "details",
+        dataCallback: function () {
+          js_api.setAttribute({
+            asset_id: transaction.assetid,
+            attr_name: transaction.attrName,
+            attr_val: transaction.attrValue,
+            dataCallback: resultAttr,
+            errorCallback: function () {
+              releaseDetailLock(transaction);
+              displayResultAttr(
+                "Save failed \u2014 please try again.",
+                "error",
+              );
+              $('tr[id="' + transaction.assetid + '"]')
+                .find('.edit_area[data-attributename="name"]')
+                .removeClass("pending");
+            },
+          });
+        },
+        errorCallback: function () {
+          displayResultAttr(
+            "Could not acquire lock \u2014 please try again.",
+            "error",
+          );
+          $('tr[id="' + transaction.assetid + '"]')
+            .find('.edit_area[data-attributename="name"]')
+            .removeClass("pending");
+        },
+      });
+    }
+
+    function releaseDetailLock(transaction) {
+      if (transaction.attrName === "name" && transaction._retriedWithLock) {
+        js_api.releaseLock({
+          asset_id: transaction.assetid,
+          screen_name: "details",
+        });
+      }
+    }
+
     function resultAttr(data) {
       if (Array.isArray(data) && data[0].indexOf("successfully set") !== -1) {
+        releaseDetailLock(transaction);
         displayResultAttr(data[0], "success");
         refreshTableCellsAttr("success");
       } else {
         var msg = Array.isArray(data)
           ? data[0]
           : data.error || "An error occurred.";
+
+        releaseDetailLock(transaction);
+
+        // "name" attribute: PROD does not auto-lock the "details" screen,
+        // so the first (unlocked) attempt fails with "could not be set".
+        // Retry once with an explicit acquireLock on "details".
+        if (
+          transaction.attrName === "name" &&
+          !transaction._retriedWithLock &&
+          msg.indexOf("could not be set") !== -1
+        ) {
+          transaction._retriedWithLock = true;
+          submitAttrWithLock(transaction);
+          return;
+        }
 
         // File assets (Word, PDF, etc.) store their title as the "title"
         // attribute, not "short_name". If the page was rendered with the old

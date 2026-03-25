@@ -14,7 +14,7 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 - [File Structure](#file-structure)
 - [Local Dev Environment](#local-dev-environment)
 - [HTML Sanitisation Checklist](#html-sanitisation-checklist) — run after every production re-save
-- [Architecture](#architecture) — jQuery triple-load problem, IIFE, JS API, HTML structure, edit controls, saving
+- [Architecture](#architecture) — jQuery triple-load problem, IIFE, JS API, JS API methods, locking, HTML structure, edit controls, saving
 - [Metadata & Attribute Field Reference](#metadata-field-id-reference)
 - [DataTables Integration](#datatables-integration-march-2026) — init config, render functions, row invalidation, column filters
 - [Interaction Behaviour & Editing Guidelines](#interaction-behaviour-and-editing-guidelines) — makeEditable, datepicker, dropdowns
@@ -22,6 +22,7 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 - [Hover Edit Tooltip](#hover-edit-tooltip)
 - [Status Column Colour System](#status-column-colour-system)
 - [Agency–Advertise Cross-Field Rule](#agency-and-advertise-behaviour-2026-updates)
+- [Auto Rename Button](#auto-rename-button-file-name-and-document-title-columns)
 - [Event Delegation Pattern](#event-delegation-pattern-required-for-datatables-interactivity)
 - [Squiz Matrix Template Reference](#squiz-matrix-asset-listing-template)
 - [Squiz Matrix JS API Field Value Formats](#squiz-matrix-js-api--setmetadata-field-value-formats)
@@ -104,6 +105,89 @@ Key points for future developers:
 - **Advertise** uses the checkbox multiselect popup (`.multiselect-dropdown`). When it opens, the handler reads the row's current Agency `<select>` value and renders checkboxes **only** for `WoG` plus that agency code (or `WoG` only when Agency is blank). NTG Central (WoG) is **not** force-checked — the user can uncheck it freely before saving.
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
 - To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions [data-action='save']`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
+
+## Auto Rename button (File Name and Document Title columns)
+
+Both the **File Name** cell (`data-attributename="name"`) and the **Document Title** cell (`data-attributename="title"` or `"short_name"`) have an **Auto** button that appears to the left of Save when the user opens the inline editor. Clicking it derives a standardised name from other fields in the same table row and populates the textarea — the user reviews and clicks Save to commit.
+
+### Document Title format
+
+```
+<PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD
+```
+
+| Part             | Source                                      | Notes                                                                               |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)                         |
+| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)                         |
+| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()`           |
+| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                                 |
+| Suffix           | Literal `"JD"`                              | Always appended                                                                     |
+
+**Example:** `30689 SP1-SP2 Senior Practice Leader - Central DCDD JD`
+
+Parts joined with **spaces**; empty segments filtered; double-spaces collapsed.
+
+### File Name format
+
+```
+<prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>
+```
+
+| Part                 | Source                                      | Notes                                                                               |
+| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Prefix               | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                         |
+| Designation keys     | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                        |
+| Position title slug  | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`          |
+| Agency key           | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                                 |
+| Suffix               | Literal `"jd"`                              | Always appended before extension                                                    |
+| Extension            | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found      |
+
+**Example:** `30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx`
+
+Parts joined with **hyphens**; empty segments filtered; consecutive hyphens collapsed.
+
+**`slugify(str)`** — lowercases, replaces any sequence of non-alphanumeric characters with a single `-`, strips leading/trailing hyphens. Defined as an inner function inside `autoRenameButtonFactory`.
+
+### Prefix logic (priority order)
+
+Applied identically for both cell types, using different source text and casing:
+
+| Cell         | Source text                       | SUPN match → | Digit match → | Fallback → |
+|---|---|---|---|---|
+| Document Title | File Name **display text**       | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"` |
+| File Name      | Current **textarea value**       | `"supn"`     | digits (e.g. `"30689"`) | `"pn"` |
+
+1. If source text matches `/supn|supernumerary/i` → use SUPN prefix (highest priority)
+2. Else if source text matches `/(?:\d{3,})/` → use the matched digit string
+3. Else → use `PN` / `pn`
+
+A file named `"SUPN30689..."` produces prefix `"SUPN"` / `"supn"` — the digit match is never reached.
+
+### Empty-field safety
+
+- **Title:** `[prefix, designStr, posTitle, agencyKey, "JD"].filter(Boolean).join(" ")` then `.replace(/\s{2,}/g, " ").trim()`
+- **File Name:** `[fnPrefix, fnDesignStr, slugify(posTitle), fnAgencyKey, "jd"].filter(Boolean).join("-")` then `.replace(/-{2,}/g, "-")` + `ext`
+
+### Implementation
+
+Everything lives in `src/editor.js`:
+
+- **`makeEditable(selector, onSave, extraButtonsFactory)`** — the optional third parameter calls the factory with `($el, $textarea)` immediately after the textarea and Save/Cancel buttons are created. Any element it returns is prepended to the actions row before Save.
+- **`autoRenameButtonFactory($el, $textarea)`** — handles all three attribute names (`"name"`, `"title"`, `"short_name"`); returns `null` for anything else. Branches on `isTitle` vs `isName` to apply the correct format. Contains the inner `slugify()` helper.
+- The Auto button uses `class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"` and icon `<span class="fal fa-magic"></span>`. Shares the pill border-radius in `eoi-metadata-editor.css` via `.ntgc-btn--secondary[data-action="save"], .ntgc-btn--secondary[data-action="auto-rename"]`.
+
+### Extending this pattern
+
+If you need an extra button on another cell type:
+
+1. Define a factory function `function myFactory($el, $textarea) { ... }` that returns a jQuery element (or `null` to suppress).
+2. Pass it as the third argument to the relevant `makeEditable(...)` call.
+3. The button will appear to the left of Save. Add CSS to `eoi-metadata-editor.css` scoped to `[data-action="your-action"]`.
+
+> **Coding agents:** `autoRenameButtonFactory` returns `null` for any `data-attributename` other than `"name"`, `"title"`, or `"short_name"`. All metadata-editor cells (field ID-based) use a separate `makeEditable` call and are never passed this factory — they will never get an Auto button unless explicitly wired.
+
+---
 
 ## DataTables customisations and UI features
 
@@ -587,11 +671,17 @@ Use this sequence for most changes to avoid regressions:
 | Console errors after re-saving HTML from production | Run the HTML Sanitisation Checklist above                                                                                                                          |
 | Hover tooltip missing or shows wrong label          | Check `data-label` attribute (see step 9 of the sanitisation checklist); or update the label string in `row-template.html` / `makeDropdown`/`makeMultiSelect` call |
 | Hover tooltip text or styling needs changing        | `src/eoi-metadata-editor.css` — `.edit_area:hover::before` / `::after` rules                                                                                       |
+| File Name save fails on PROD but works on DEV       | The `name` attribute uses a retry-with-lock pattern; see _Locking for the `name` attribute_ in Architecture and the 2026-03-25 change history entry                |
 | Inline editing broken                               | Check `editor.js` for event delegation (handlers must use `$(document).on()`, not direct jQuery binding); see Event Delegation section                             |
 | Table sorting wrong on a column                     | Check `src/editor.js` DataTables init; if custom date format, add `columnDefs` entry with correct `targets` and sort-type render override                          |
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
 | Pagination controls not appearing                   | Verify DataTables initialization; check browser console for JS errors during `$('#myTable').DataTable({...})`                                                      |
 | Filtering / global search not working               | Verify `searching: true` in DataTables config; test by typing in the search box above the table                                                                    |
+| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                        |
+| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic      |
+| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                                 |
+| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                       |
+| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                  |
 
 ---
 
@@ -609,11 +699,11 @@ Use this sequence for most changes to avoid regressions:
 
 Attribute columns (not metadata — use `js_api.setAttribute`):
 
-| Column    | `data-attributename` | Notes                                                                       |
-| --------- | -------------------- | --------------------------------------------------------------------------- |
-| File Name | `name`               | All asset types                                                             |
-| Title     | `title`              | File assets only (Word, PDF, etc.)                                          |
-| Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()` |
+| Column    | `data-attributename` | Notes                                                                                                                       |
+| --------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| File Name | `name`               | All asset types; uses retry-with-lock pattern for "details" screen (see _Locking for the `name` attribute_ in Architecture) |
+| Title     | `title`              | File assets only (Word, PDF, etc.); server auto-locks "attributes" screen                                                   |
+| Title     | `short_name`         | Non-file assets; `short_name→title` retry fallback active in `resultAttr()`; server auto-locks "attributes" screen          |
 
 ---
 
@@ -687,6 +777,18 @@ var js_api = new Squiz_Matrix_API(apiOptions);
 
 The API key must match the key configured on the JavaScript API asset in Squiz Matrix.
 
+### JS API methods used by this editor
+
+| Method           | Purpose                                              | Called from               | Notes                                                                                |
+| ---------------- | ---------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| `setMetadata`    | Save metadata field value                            | `submit()`                | All metadata fields (position title, designation, agency, location, advertise, etc.) |
+| `setAttribute`   | Save asset attribute value                           | `submitAttr()`            | `name`, `title`, `short_name`                                                        |
+| `setAssetStatus` | Change asset status (Live, Under Construction, etc.) | `submitStatusAttribute()` | Accepts numeric status code                                                          |
+| `acquireLock`    | Acquire edit lock on an admin screen                 | `submitAttrWithLock()`    | Used in retry path for `setAttribute('name', ...)` on PROD; `screen_name: "details"` |
+| `releaseLock`    | Release edit lock on an admin screen                 | `releaseDetailLock()`     | Only called when `_retriedWithLock` is true (lock was actually acquired)             |
+
+> **Locking rule of thumb:** Custom attributes (`title`, `short_name`) auto-lock on the server. The `name` attribute uses a retry-with-lock pattern: try without lock first (works on DEV), retry with `acquireLock`/`releaseLock` on failure (needed on PROD). Always test on **both** DEV and PROD — they have different auto-locking behaviour.
+
 ### Restoring pre-selected values on load
 
 ```js
@@ -726,10 +828,20 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </select>
   <div class="single-dropdown-actions">
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--secondary"
+      data-action="save"
+    >
       <span class="fal fa-save"></span> Save
     </button>
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--tertiary"
+      data-action="cancel"
+    >
+      Cancel
+    </button>
   </div>
 </div>
 ```
@@ -745,10 +857,20 @@ All three control types use explicit **Save/Cancel buttons** — there is no aut
     ...
   </div>
   <div class="metadata_option_actions">
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="save">
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--secondary"
+      data-action="save"
+    >
       <span class="fal fa-save"></span> Save
     </button>
-    <button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>
+    <button
+      type="button"
+      class="ntgc-btn btn-sm ntgc-btn--tertiary"
+      data-action="cancel"
+    >
+      Cancel
+    </button>
   </div>
 </div>
 ```
@@ -781,6 +903,32 @@ js_api.setMetadata({
 ```
 
 Attribute fields (name, title, short_name) use `submitAttr()` → `js_api.setAttribute()` instead.
+
+**Locking for the `name` attribute (retry-with-lock pattern):**
+
+The `name` attribute is a system property that lives on the Squiz Matrix "details" admin screen. Unlike custom attributes (`title`, `short_name`) which live on the "attributes" screen, the production server does **not** auto-acquire a lock for the "details" screen when `setAttribute` is called via the JS API. This causes `setAttribute('name', ...)` to fail on production with:
+
+```
+Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)
+```
+
+However, the DEV server auto-locks **all** screens — and calling `acquireLock` explicitly on DEV _interferes_ with this, causing `setAttribute('name', ...)` to fail there too. Because of this incompatibility, a **retry-with-lock** pattern is used instead of always locking:
+
+1. `submitAttr()` calls `setAttribute` directly (no lock) — works on DEV.
+2. If the server returns a "could not be set" error for the `name` attribute, `resultAttr()` retries once via `submitAttrWithLock()`, which calls `acquireLock({ screen_name: "details" })` → `setAttribute` → `releaseLock` — needed on PROD.
+3. `releaseDetailLock()` only calls `releaseLock` when `transaction._retriedWithLock` is true (i.e. a lock was actually acquired).
+
+```
+submitAttr() → setAttribute (no lock)
+  ↓ success → done (DEV path)
+  ↓ "could not be set" for name → submitAttrWithLock()
+      ↓ acquireLock("details") → setAttribute → releaseLock (PROD path)
+  ↓ other error → show error
+```
+
+Other attributes (`title`, `short_name`) skip locking entirely — the server auto-locks the "attributes" screen for those.
+
+> **DEV vs PROD:** DEV (`ntgcentral-dev.nt.gov.au`) auto-locks all screens including "details" — explicit `acquireLock` _interferes_. PROD (`ntgcentral.nt.gov.au`) only auto-locks "attributes" — the `name` attribute needs an explicit lock. The retry pattern handles both transparently.
 
 ### Closing-date field with datepicker
 
@@ -1077,10 +1225,12 @@ Located around line 410 in `src/editor.js`. The function takes a **CSS selector 
 function makeEditable(selector, onSave) {
   var activateEdit = function ($el) {
     var savedText = $el.text().trim();
-    var $textarea = $('<textarea class="form-control" rows="2">').val(savedText);
+    var $textarea = $('<textarea class="form-control" rows="2">').val(
+      savedText,
+    );
     var $saveBtn = $('<button type="button" ...></button>');
     var $cancelBtn = $('<button type="button" ...></button>');
-    $el.empty().append($textarea, $('...').append($saveBtn, $cancelBtn));
+    $el.empty().append($textarea, $("...").append($saveBtn, $cancelBtn));
 
     // Direct binding — these nodes are new; DataTables won't replace them
     $cancelBtn.on("click", function (e) {
@@ -1103,7 +1253,10 @@ function makeEditable(selector, onSave) {
 }
 
 // Usage:
-makeEditable(".metadata-editor .edit_area:not([data-datepicker='true'])", onSaveCallback);
+makeEditable(
+  ".metadata-editor .edit_area:not([data-datepicker='true'])",
+  onSaveCallback,
+);
 ```
 
 **Datepicker** — `activateDatepicker($field)`:
@@ -1115,20 +1268,33 @@ var activateDatepicker = function ($field) {
   // Create input + Save/Cancel buttons, initialise Bootstrap datepicker...
 
   // Direct binding — freshly created nodes; DataTables won't rewrite these
-  $cancelBtn.on("click", function (e) { e.stopPropagation(); closeDate(); });
-  $saveBtn.on("click",   function (e) { e.stopPropagation(); /* submit ISO date */ });
+  $cancelBtn.on("click", function (e) {
+    e.stopPropagation();
+    closeDate();
+  });
+  $saveBtn.on("click", function (e) {
+    e.stopPropagation(); /* submit ISO date */
+  });
   $input.on("keydown.datepickerEsc", function (e) {
     if (e.keyCode === 27) closeDate(); // Escape
   });
 };
 
 // Delegated: opening the picker survives DataTables DOM rewrite
-$(document).on("click.datepicker", ".edit_area[data-datepicker='true']", function () {
-  activateDatepicker($(this));
-});
-$(document).on("keydown.datepicker", ".edit_area[data-datepicker='true']", function (e) {
-  if (e.keyCode === 13) activateDatepicker($(this)); // Enter
-});
+$(document).on(
+  "click.datepicker",
+  ".edit_area[data-datepicker='true']",
+  function () {
+    activateDatepicker($(this));
+  },
+);
+$(document).on(
+  "keydown.datepicker",
+  ".edit_area[data-datepicker='true']",
+  function (e) {
+    if (e.keyCode === 13) activateDatepicker($(this)); // Enter
+  },
+);
 ```
 
 **Dropdown selects** — all handlers are delegated:
@@ -1137,19 +1303,41 @@ Both single-select and multi-select dropdowns use delegated handlers. There is *
 
 ```javascript
 // Open dropdown (single-select or multi-select)
-$(document).on("click", ".metadata_option_display", function () { /* build popup */ });
+$(document).on("click", ".metadata_option_display", function () {
+  /* build popup */
+});
 
 // Multi-select: Save / Cancel
-$(document).on("click", ".metadata_option_actions [data-action='save']",   handler);
-$(document).on("click", ".metadata_option_actions [data-action='cancel']", handler);
+$(document).on(
+  "click",
+  ".metadata_option_actions [data-action='save']",
+  handler,
+);
+$(document).on(
+  "click",
+  ".metadata_option_actions [data-action='cancel']",
+  handler,
+);
 
 // Single-select: Save / Cancel
-$(document).on("click", ".single-dropdown-actions [data-action='save']",   handler);
-$(document).on("click", ".single-dropdown-actions [data-action='cancel']", handler);
+$(document).on(
+  "click",
+  ".single-dropdown-actions [data-action='save']",
+  handler,
+);
+$(document).on(
+  "click",
+  ".single-dropdown-actions [data-action='cancel']",
+  handler,
+);
 
 // Outside-click closes open dropdown without saving
 $(document).on("click", function (e) {
-  if (!$(e.target).closest(".metadata_option_display, .multiselect-dropdown, .single-dropdown").length) {
+  if (
+    !$(e.target).closest(
+      ".metadata_option_display, .multiselect-dropdown, .single-dropdown",
+    ).length
+  ) {
     // restore original value, remove popup
   }
 });
@@ -1389,6 +1577,35 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 > **Coding agents:** when re-saving the HTML from production, run a find/replace pass to restore all `data-label` attributes — the production server does not emit them. See the bulk PowerShell replacement commands used in the initial setup as a reference pattern.
 
 ---
+
+### 2026-03-25: Auto Rename button for Document Title column
+
+- Added an **Auto** button to the Document Title inline editor (cells with `data-attributename="title"` or `"short_name"`); later extended to File Name (`"name"`) — see the entry below.
+- **Document Title format:** `"<PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD"` — e.g. `"30689 SP1-SP2 Senior Practice Leader - Central DCDD JD"`. Parts joined with spaces.
+- **Prefix logic (priority order):** File Name display text contains `SUPN`/`supernumerary` → `"SUPN"`; 3+ consecutive digits → those digits; else → `"PN"`.
+- **Field sources:** designation from `select[data-metadatafieldid="445634"]` (`.val()` → uppercase, hyphen-joined); position title from `.edit_area[data-metadatafieldid="445504"]` (textarea `.val()` if in edit mode, else `.text()`); agency from `select[data-metadatafieldid="445640"]` (`.val()` uppercased). Empty segments filtered; double-spaces collapsed.
+- **Implementation:** `makeEditable()` signature extended to `makeEditable(selector, onSave, extraButtonsFactory)`. New `autoRenameButtonFactory($el, $textarea)` defined in `editor.js`; passed as third argument to `makeEditable(".attribute-editor .edit_area", ...)`. Button uses `fal fa-magic` (FA5 Pro) with label `" Auto"` and `data-action="auto-rename"`.
+- **CSS:** pill border-radius rule in `eoi-metadata-editor.css` extended from `[data-action="save"]` to a grouped selector also including `[data-action="auto-rename"]`, so both buttons share identical styling.
+- **Behaviour:** clicking Auto populates the textarea only — does not save. User reviews and clicks Save to commit.
+- **Files changed:** `src/editor.js` (`makeEditable` signature, `autoRenameButtonFactory`, updated call site); `src/eoi-metadata-editor.css` (grouped selector for pill radius).
+
+### 2026-03-25: Auto Rename button extended to File Name column
+
+- Extended `autoRenameButtonFactory` to also handle the File Name cell (`data-attributename="name"`). Previously the factory returned `null` for `"name"`; now both `isTitle` and `isName` flags control branching.
+- **File Name format:** `"<prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>"` — e.g. `"30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx"`. Parts joined with hyphens (all lowercase).
+- **Prefix logic:** same SUPN/digit/fallback priority as Document Title but sourced from the **current textarea value** (existing filename), not the display text of another cell. Lowercase output: `"supn"`, digits, or `"pn"`.
+- **Extension:** extracted from the current textarea value using `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if no extension found. Appended after `"jd"` outside the hyphen-join.
+- **`slugify()` helper:** inner function — lowercases, collapses non-alphanumeric sequences to single hyphens, strips leading/trailing hyphens. Applied to position title only.
+- **Empty-field safety:** `filter(Boolean)` drops empty segments; `.replace(/-{2,}/g, "-")` collapses consecutive hyphens.
+- **Files changed:** `src/editor.js` — `autoRenameButtonFactory` guard and click handler only; no CSS or HTML changes required.
+
+### 2026-03-25: Retry-with-lock for `name` attribute (File Name column)
+
+- **Symptom:** Editing the File Name column on production (`ntgcentral.nt.gov.au`) always failed with `Attribute "name"(of type "text") could not be set to "…" for Asset "…" (#XXXXX)`. The same edit worked on DEV (`ntgcentral-dev.nt.gov.au`). Both servers run the same Squiz Matrix version.
+- **Root cause:** The `name` attribute is a system property stored on the Squiz Matrix "details" admin screen. The JS API `setAttribute` function relies on the server to auto-acquire a write lock, but PROD does **not** auto-lock the "details" screen. DEV auto-locks all screens. Crucially, calling `acquireLock` explicitly on DEV _interferes_ with the auto-locking, so a lock-first approach breaks DEV.
+- **Fix in `editor.js`:** Retry-with-lock pattern. `submitAttr()` calls `setAttribute` directly (no lock) — this works on DEV. If the server returns a "could not be set" error for the `name` attribute, `resultAttr()` sets `transaction._retriedWithLock = true` and retries via `submitAttrWithLock()`, which does `acquireLock({ screen_name: "details" })` → `setAttribute` → `releaseLock`. `releaseDetailLock()` only releases when `_retriedWithLock` is true.
+- **Files changed:** `src/editor.js` — `submitAttr()`, new `submitAttrWithLock()`, `releaseDetailLock()`, `resultAttr()`.
+- **Lesson:** DEV and PROD have incompatible auto-locking behaviour. Always test attribute changes on **both** environments. Use retry-with-lock (not lock-first) to handle "details" screen differences.
 
 ### 2026-03-08: Hover edit tooltip system
 
@@ -1702,6 +1919,8 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 7. **Never format Squiz template files** — `row-template.html`, `server-functions.html` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
 8. **File assets use `title`, not `short_name`** — never hardcode `data-attributename="short_name"` unconditionally in the row template. Always use the `%asset_type_code%` conditional (see _File asset vs. page asset attributes_) so file-type assets receive the correct attribute name.
 9. **`e.stopPropagation()` is required on inline edit buttons** — Cancel and Save buttons are children of the clickable `.edit_area` div. Without `stopPropagation`, clicks bubble to the parent and immediately re-open the editor.
+10. **The Auto button is only injected via `makeEditable`'s `extraButtonsFactory` param** — `autoRenameButtonFactory` handles `"name"`, `"title"`, and `"short_name"`; it returns `null` for any other `data-attributename`. If you add a new attribute-editor cell type and do not want the Auto button, ensure its `data-attributename` is none of those three values, or add an explicit early return inside the factory.
+11. **The `name` attribute requires explicit locking** — Unlike `title`/`short_name`, the `name` attribute lives on the Squiz "details" screen, which does not auto-lock on production. `submitAttr()` handles this with `acquireLock`/`releaseLock` when `attrName === "name"`. If a new system attribute from the "details" screen needs editing in future, follow the same pattern.
 
 ---
 
@@ -1723,3 +1942,4 @@ Run this after any metadata field or select-control change:
 - Attaching delegated handlers to `.metadata-editor` instead of `$(document)`: causes duplicate submissions.
 - Using `data-attributename="short_name"` unconditionally for the Title column: file-type assets (Word, PDF, etc.) will fail with `Attribute "short_name" does not exist`. Use the `%asset_type_code%` conditional in `row-template.html` and verify the type code list includes all file types in the listing.
 - Omitting `e.stopPropagation()` on inline edit action buttons: click events bubble to the `.edit_area` parent and immediately re-trigger the edit handler.
+- Calling `setAttribute('name', ...)` without acquiring a lock first: works on DEV but fails on PROD with `Attribute "name"(of type "text") could not be set`. The `name` attribute lives on the "details" screen which requires explicit locking on production. See `submitAttr()` in `editor.js`.

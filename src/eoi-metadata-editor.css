@@ -209,7 +209,8 @@ table.dataTable thead th.sorting_desc::after {
   margin-top: 4px;
 }
 
-.ntgc-btn.ntgc-btn--secondary[data-action="save"] {
+.ntgc-btn.ntgc-btn--secondary[data-action="save"],
+.ntgc-btn.ntgc-btn--secondary[data-action="auto-rename"] {
   border-radius: 9999px;
   padding-left: 0.5rem;
   padding-right: 0.5rem;
