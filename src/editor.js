@@ -407,7 +407,7 @@
     // Keyboard accessible: Enter to activate, Escape to cancel, Tab/Shift+Tab to exit.
     // selector must be a CSS selector string (not a jQuery object) so that
     // document-level delegation works after DataTables replaces DOM nodes.
-    function makeEditable(selector, onSave) {
+    function makeEditable(selector, onSave, extraButtonsFactory) {
       $(selector).css({ cursor: "pointer", minHeight: "1em" });
 
       var activateEdit = function ($el) {
@@ -423,9 +423,12 @@
         var $cancelBtn = $(
           '<button type="button" class="ntgc-btn btn-sm ntgc-btn--tertiary" data-action="cancel">Cancel</button>',
         );
-        var $actions = $(
-          '<div style="margin-top:4px;display:flex;gap:4px;">',
-        ).append($saveBtn, $cancelBtn);
+        var $actions = $('<div style="margin-top:4px;display:flex;gap:4px;">');
+        if (extraButtonsFactory) {
+          var $extra = extraButtonsFactory($el, $textarea);
+          if ($extra) $actions.append($extra);
+        }
+        $actions.append($saveBtn, $cancelBtn);
 
         $el.empty().append($textarea, $actions);
         $textarea.focus();
@@ -747,15 +750,79 @@
 
     var transaction = {};
 
-    makeEditable(".attribute-editor .edit_area", function (value, $el) {
-      transaction = {
-        attrValue: value,
-        assetid: $el.closest("tr").attr("id"),
-        attrName: $el.attr("data-attributename"),
-      };
-      $el.attr("data-newvalue", value).addClass("pending");
-      submitAttr(transaction);
-    });
+    function autoRenameButtonFactory($el, $textarea) {
+      var attrName = $el.attr("data-attributename");
+      if (attrName !== "title" && attrName !== "short_name") return null;
+
+      var $autoBtn = $(
+        '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"><span class="fal fa-magic"></span> Auto</button>',
+      );
+
+      $autoBtn.on("click", function (e) {
+        e.stopPropagation();
+        var $row = $el.closest("tr");
+
+        // Derive PN prefix from File Name
+        var fileName = $row
+          .find(".edit_area[data-attributename='name']")
+          .text()
+          .trim();
+        var prefix;
+        if (/supn|supernumerary/i.test(fileName)) {
+          prefix = "SUPN";
+        } else {
+          var numMatch = /(\d{3,})/.exec(fileName);
+          prefix = numMatch ? numMatch[1] : "PN";
+        }
+
+        // Designation keys (multi-select) → uppercase, hyphen-joined
+        var $desigSelect = $row.find("select[data-metadatafieldid='445634']");
+        var desigVals = $desigSelect.val() || [];
+        var designStr = desigVals
+          .map(function (v) {
+            return v.toUpperCase();
+          })
+          .join("-");
+
+        // Position title — prefer textarea value if that cell is open for editing
+        var $posTitleCell = $row.find(
+          ".edit_area[data-metadatafieldid='445504']",
+        );
+        var $posTitleTA = $posTitleCell.find("textarea");
+        var posTitle = (
+          $posTitleTA.length ? $posTitleTA.val() : $posTitleCell.text()
+        ).trim();
+
+        // Agency key (single-select) → uppercase
+        var $agencySelect = $row.find("select[data-metadatafieldid='445640']");
+        var agencyKey = ($agencySelect.val() || "").toUpperCase();
+
+        // Build name, filtering empty parts, collapsing any double-spaces
+        var autoName = [prefix, designStr, posTitle, agencyKey, "JD"]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+
+        $textarea.val(autoName).focus();
+      });
+
+      return $autoBtn;
+    }
+
+    makeEditable(
+      ".attribute-editor .edit_area",
+      function (value, $el) {
+        transaction = {
+          attrValue: value,
+          assetid: $el.closest("tr").attr("id"),
+          attrName: $el.attr("data-attributename"),
+        };
+        $el.attr("data-newvalue", value).addClass("pending");
+        submitAttr(transaction);
+      },
+      autoRenameButtonFactory,
+    );
 
     function submitAttr(transaction) {
       js_api.setAttribute({
