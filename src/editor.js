@@ -752,7 +752,17 @@
 
     function autoRenameButtonFactory($el, $textarea) {
       var attrName = $el.attr("data-attributename");
-      if (attrName !== "title" && attrName !== "short_name") return null;
+      var isTitle = attrName === "title" || attrName === "short_name";
+      var isName = attrName === "name";
+      if (!isTitle && !isName) return null;
+
+      // Convert free text to a lowercase hyphenated slug
+      function slugify(str) {
+        return str
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
 
       var $autoBtn = $(
         '<button type="button" class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"><span class="fal fa-magic"></span> Auto</button>',
@@ -762,29 +772,10 @@
         e.stopPropagation();
         var $row = $el.closest("tr");
 
-        // Derive PN prefix from File Name
-        var fileName = $row
-          .find(".edit_area[data-attributename='name']")
-          .text()
-          .trim();
-        var prefix;
-        if (/supn|supernumerary/i.test(fileName)) {
-          prefix = "SUPN";
-        } else {
-          var numMatch = /(\d{3,})/.exec(fileName);
-          prefix = numMatch ? numMatch[1] : "PN";
-        }
-
-        // Designation keys (multi-select) → uppercase, hyphen-joined
+        // Shared field reads
         var $desigSelect = $row.find("select[data-metadatafieldid='445634']");
         var desigVals = $desigSelect.val() || [];
-        var designStr = desigVals
-          .map(function (v) {
-            return v.toUpperCase();
-          })
-          .join("-");
 
-        // Position title — prefer textarea value if that cell is open for editing
         var $posTitleCell = $row.find(
           ".edit_area[data-metadatafieldid='445504']",
         );
@@ -793,18 +784,59 @@
           $posTitleTA.length ? $posTitleTA.val() : $posTitleCell.text()
         ).trim();
 
-        // Agency key (single-select) → uppercase
         var $agencySelect = $row.find("select[data-metadatafieldid='445640']");
-        var agencyKey = ($agencySelect.val() || "").toUpperCase();
+        var agencyVal = $agencySelect.val() || "";
 
-        // Build name, filtering empty parts, collapsing any double-spaces
-        var autoName = [prefix, designStr, posTitle, agencyKey, "JD"]
-          .filter(Boolean)
-          .join(" ")
-          .replace(/\s{2,}/g, " ")
-          .trim();
-
-        $textarea.val(autoName).focus();
+        if (isTitle) {
+          // Document Title: "PREFIX DESIG-KEYS Position Title AGENCY JD"
+          var fileName = $row
+            .find(".edit_area[data-attributename='name']")
+            .text()
+            .trim();
+          var prefix;
+          if (/supn|supernumerary/i.test(fileName)) {
+            prefix = "SUPN";
+          } else {
+            var numMatch = /(\d{3,})/.exec(fileName);
+            prefix = numMatch ? numMatch[1] : "PN";
+          }
+          var designStr = desigVals
+            .map(function (v) {
+              return v.toUpperCase();
+            })
+            .join("-");
+          var agencyKey = agencyVal.toUpperCase();
+          var autoName = [prefix, designStr, posTitle, agencyKey, "JD"]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+          $textarea.val(autoName).focus();
+        } else {
+          // File Name: "prefix-desig-keys-position-title-agency-jd.ext"
+          var currentFileName = $textarea.val();
+          var extMatch = /(\.[ a-zA-Z0-9]+)$/.exec(currentFileName);
+          var ext = extMatch ? extMatch[1].toLowerCase() : "";
+          var fnPrefix;
+          if (/supn|supernumerary/i.test(currentFileName)) {
+            fnPrefix = "supn";
+          } else {
+            var fnNumMatch = /(\d{3,})/.exec(currentFileName);
+            fnPrefix = fnNumMatch ? fnNumMatch[1] : "pn";
+          }
+          var fnDesignStr = desigVals
+            .map(function (v) {
+              return v.toLowerCase();
+            })
+            .join("-");
+          var fnAgencyKey = agencyVal.toLowerCase();
+          var autoFileName =
+            [fnPrefix, fnDesignStr, slugify(posTitle), fnAgencyKey, "jd"]
+              .filter(Boolean)
+              .join("-")
+              .replace(/-{2,}/g, "-") + ext;
+          $textarea.val(autoFileName).focus();
+        }
       });
 
       return $autoBtn;

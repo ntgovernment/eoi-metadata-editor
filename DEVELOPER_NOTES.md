@@ -22,7 +22,7 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 - [Hover Edit Tooltip](#hover-edit-tooltip)
 - [Status Column Colour System](#status-column-colour-system)
 - [Agency–Advertise Cross-Field Rule](#agency-and-advertise-behaviour-2026-updates)
-- [Auto Rename Button](#auto-rename-button-document-title-column)
+- [Auto Rename Button](#auto-rename-button-file-name-and-document-title-columns)
 - [Event Delegation Pattern](#event-delegation-pattern-required-for-datatables-interactivity)
 - [Squiz Matrix Template Reference](#squiz-matrix-asset-listing-template)
 - [Squiz Matrix JS API Field Value Formats](#squiz-matrix-js-api--setmetadata-field-value-formats)
@@ -106,47 +106,76 @@ Key points for future developers:
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
 - To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions [data-action='save']`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
 
-## Auto Rename button (Document Title column)
+## Auto Rename button (File Name and Document Title columns)
 
-The Document Title column (`data-attributename="title"` or `"short_name"`) has an **Auto** button that appears to the left of Save when a user opens the inline editor. Clicking it derives a standardised document title from other fields in the same table row and populates the textarea — the user then reviews and clicks Save to commit.
+Both the **File Name** cell (`data-attributename="name"`) and the **Document Title** cell (`data-attributename="title"` or `"short_name"`) have an **Auto** button that appears to the left of Save when the user opens the inline editor. Clicking it derives a standardised name from other fields in the same table row and populates the textarea — the user reviews and clicks Save to commit.
 
-### Generated format
+### Document Title format
 
 ```
-<prefix> <designation keys> <position title> <agency key> JD
+<PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD
 ```
 
-| Part | Source | Notes |
-|---|---|---|
-| Prefix | File Name cell text | See prefix logic below |
-| Designation keys | `select[data-metadatafieldid="445634"]` | Semicolon → uppercase, hyphen-joined (e.g. `SP1-SP2`) |
-| Position title | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is currently in edit mode, otherwise `.text()` |
-| Agency key | `select[data-metadatafieldid="445640"]` | Uppercased (e.g. `DCDD`) |
-| Suffix | Literal `"JD"` | Always appended |
+| Part             | Source                                      | Notes                                                                               |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)                         |
+| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)                         |
+| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()`           |
+| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                                 |
+| Suffix           | Literal `"JD"`                              | Always appended                                                                     |
 
-**Example output:** `30689 SP1-SP2 Senior Practice Leader - Central DCDD JD`
+**Example:** `30689 SP1-SP2 Senior Practice Leader - Central DCDD JD`
+
+Parts joined with **spaces**; empty segments filtered; double-spaces collapsed.
+
+### File Name format
+
+```
+<prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>
+```
+
+| Part                 | Source                                      | Notes                                                                               |
+| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Prefix               | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                         |
+| Designation keys     | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                        |
+| Position title slug  | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`          |
+| Agency key           | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                                 |
+| Suffix               | Literal `"jd"`                              | Always appended before extension                                                    |
+| Extension            | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found      |
+
+**Example:** `30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx`
+
+Parts joined with **hyphens**; empty segments filtered; consecutive hyphens collapsed.
+
+**`slugify(str)`** — lowercases, replaces any sequence of non-alphanumeric characters with a single `-`, strips leading/trailing hyphens. Defined as an inner function inside `autoRenameButtonFactory`.
 
 ### Prefix logic (priority order)
 
-The prefix is derived from the File Name cell text (`$row.find('.edit_area[data-attributename="name"]').text().trim()`):
+Applied identically for both cell types, using different source text and casing:
 
-1. If the file name contains **`SUPN`** or **`supernumerary`** (case-insensitive) → prefix is `"SUPN"`
-2. Else if the file name contains a run of **3 or more consecutive digits** → prefix is those digits (e.g. `"30689"` from `"30689 SP1 Senior Practice Leader..."`).
-3. Else → prefix is `"PN"` (generic position number placeholder).
+| Cell         | Source text                       | SUPN match → | Digit match → | Fallback → |
+|---|---|---|---|---|
+| Document Title | File Name **display text**       | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"` |
+| File Name      | Current **textarea value**       | `"supn"`     | digits (e.g. `"30689"`) | `"pn"` |
 
-The SUPN/supernumerary check always has priority over the digit match — a file named `"SUPN30689..."` produces `"SUPN"`, not `"30689"`.
+1. If source text matches `/supn|supernumerary/i` → use SUPN prefix (highest priority)
+2. Else if source text matches `/(?:\d{3,})/` → use the matched digit string
+3. Else → use `PN` / `pn`
+
+A file named `"SUPN30689..."` produces prefix `"SUPN"` / `"supn"` — the digit match is never reached.
 
 ### Empty-field safety
 
-The name is built with `[prefix, designStr, posTitle, agencyKey, "JD"].filter(Boolean).join(" ")` — any empty segment is silently dropped. A trailing `.replace(/\s{2,}/g, " ").trim()` collapses any double-spaces that result from adjacent empty parts.
+- **Title:** `[prefix, designStr, posTitle, agencyKey, "JD"].filter(Boolean).join(" ")` then `.replace(/\s{2,}/g, " ").trim()`
+- **File Name:** `[fnPrefix, fnDesignStr, slugify(posTitle), fnAgencyKey, "jd"].filter(Boolean).join("-")` then `.replace(/-{2,}/g, "-")` + `ext`
 
 ### Implementation
 
 Everything lives in `src/editor.js`:
 
-- **`makeEditable(selector, onSave, extraButtonsFactory)`** — the `extraButtonsFactory` optional third parameter was added to support this feature. When provided, the factory is called with `($el, $textarea)` immediately after the textarea and Save/Cancel buttons are created. Any element it returns is prepended to the actions row before Save.
-- **`autoRenameButtonFactory($el, $textarea)`** — defined just before the `makeEditable(".attribute-editor .edit_area", ...)` call. Guards against the File Name cell by checking `data-attributename`; returns `null` for `"name"` so only Document Title cells get the button.
-- The Auto button uses `class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"` and icon `<span class="fal fa-magic"></span>`. It shares the pill border-radius rule in `eoi-metadata-editor.css` via the grouped selector `.ntgc-btn--secondary[data-action="save"], .ntgc-btn--secondary[data-action="auto-rename"]`.
+- **`makeEditable(selector, onSave, extraButtonsFactory)`** — the optional third parameter calls the factory with `($el, $textarea)` immediately after the textarea and Save/Cancel buttons are created. Any element it returns is prepended to the actions row before Save.
+- **`autoRenameButtonFactory($el, $textarea)`** — handles all three attribute names (`"name"`, `"title"`, `"short_name"`); returns `null` for anything else. Branches on `isTitle` vs `isName` to apply the correct format. Contains the inner `slugify()` helper.
+- The Auto button uses `class="ntgc-btn btn-sm ntgc-btn--secondary" data-action="auto-rename"` and icon `<span class="fal fa-magic"></span>`. Shares the pill border-radius in `eoi-metadata-editor.css` via `.ntgc-btn--secondary[data-action="save"], .ntgc-btn--secondary[data-action="auto-rename"]`.
 
 ### Extending this pattern
 
@@ -154,9 +183,9 @@ If you need an extra button on another cell type:
 
 1. Define a factory function `function myFactory($el, $textarea) { ... }` that returns a jQuery element (or `null` to suppress).
 2. Pass it as the third argument to the relevant `makeEditable(...)` call.
-3. The button will appear to the left of Save. Add any CSS to `eoi-metadata-editor.css` scoped to `[data-action="your-action"]`.
+3. The button will appear to the left of Save. Add CSS to `eoi-metadata-editor.css` scoped to `[data-action="your-action"]`.
 
-> **Coding agents:** the guard `if (attrName !== "title" && attrName !== "short_name") return null;` is intentional — the File Name cell (`data-attributename="name"`) and all metadata-editor cells use separate `makeEditable` calls and must not show the Auto button.
+> **Coding agents:** `autoRenameButtonFactory` returns `null` for any `data-attributename` other than `"name"`, `"title"`, or `"short_name"`. All metadata-editor cells (field ID-based) use a separate `makeEditable` call and are never passed this factory — they will never get an Auto button unless explicitly wired.
 
 ---
 
@@ -648,9 +677,11 @@ Use this sequence for most changes to avoid regressions:
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
 | Pagination controls not appearing                   | Verify DataTables initialization; check browser console for JS errors during `$('#myTable').DataTable({...})`                                                      |
 | Filtering / global search not working               | Verify `searching: true` in DataTables config; test by typing in the search box above the table                                                                    |
-| Auto button missing on Document Title cell          | Check `data-attributename` is `"title"` or `"short_name"` on that `.edit_area`; `"name"` (File Name) is intentionally excluded                                    |
-| Auto button generates wrong prefix                  | Check File Name cell text for SUPN/supernumerary/3+ digit pattern; see _Auto Rename button_ section for priority order                                              |
-| Auto button produces double spaces                  | One of the source fields (designation, agency) returned empty; the `filter(Boolean)` call should prevent this — check `.val()` returns on the `<select>` elements  |
+| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                        |
+| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic      |
+| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                                 |
+| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                       |
+| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                  |
 
 ---
 
@@ -1549,14 +1580,24 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 
 ### 2026-03-25: Auto Rename button for Document Title column
 
-- Added an **Auto** button to the Document Title inline editor (cells with `data-attributename="title"` or `"short_name"`). The button appears to the left of Save and is hidden for all other `.attribute-editor` cells (including File Name).
-- **Format:** `"<prefix> <designation keys> <position title> <agency key> JD"` — e.g. `"30689 SP1-SP2 Senior Practice Leader - Central DCDD JD"`.
-- **Prefix logic (priority order):** file name contains `SUPN`/`supernumerary` → `"SUPN"`; file name contains 3+ consecutive digits → those digits; else → `"PN"`.
-- **Field sources:** designation from `select[data-metadatafieldid="445634"]` (`.val()` → uppercase, hyphen-joined); position title from `.edit_area[data-metadatafieldid="445504"]` (textarea `.val()` if in edit mode, else `.text()`); agency from `select[data-metadatafieldid="445640"]` (`.val()` uppercased). Empty segments are filtered out; double-spaces are collapsed.
+- Added an **Auto** button to the Document Title inline editor (cells with `data-attributename="title"` or `"short_name"`); later extended to File Name (`"name"`) — see the entry below.
+- **Document Title format:** `"<PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD"` — e.g. `"30689 SP1-SP2 Senior Practice Leader - Central DCDD JD"`. Parts joined with spaces.
+- **Prefix logic (priority order):** File Name display text contains `SUPN`/`supernumerary` → `"SUPN"`; 3+ consecutive digits → those digits; else → `"PN"`.
+- **Field sources:** designation from `select[data-metadatafieldid="445634"]` (`.val()` → uppercase, hyphen-joined); position title from `.edit_area[data-metadatafieldid="445504"]` (textarea `.val()` if in edit mode, else `.text()`); agency from `select[data-metadatafieldid="445640"]` (`.val()` uppercased). Empty segments filtered; double-spaces collapsed.
 - **Implementation:** `makeEditable()` signature extended to `makeEditable(selector, onSave, extraButtonsFactory)`. New `autoRenameButtonFactory($el, $textarea)` defined in `editor.js`; passed as third argument to `makeEditable(".attribute-editor .edit_area", ...)`. Button uses `fal fa-magic` (FA5 Pro) with label `" Auto"` and `data-action="auto-rename"`.
 - **CSS:** pill border-radius rule in `eoi-metadata-editor.css` extended from `[data-action="save"]` to a grouped selector also including `[data-action="auto-rename"]`, so both buttons share identical styling.
-- **Behaviour:** clicking Auto populates the textarea only — it does not save. User reviews and clicks Save to commit.
+- **Behaviour:** clicking Auto populates the textarea only — does not save. User reviews and clicks Save to commit.
 - **Files changed:** `src/editor.js` (`makeEditable` signature, `autoRenameButtonFactory`, updated call site); `src/eoi-metadata-editor.css` (grouped selector for pill radius).
+
+### 2026-03-25: Auto Rename button extended to File Name column
+
+- Extended `autoRenameButtonFactory` to also handle the File Name cell (`data-attributename="name"`). Previously the factory returned `null` for `"name"`; now both `isTitle` and `isName` flags control branching.
+- **File Name format:** `"<prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>"` — e.g. `"30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx"`. Parts joined with hyphens (all lowercase).
+- **Prefix logic:** same SUPN/digit/fallback priority as Document Title but sourced from the **current textarea value** (existing filename), not the display text of another cell. Lowercase output: `"supn"`, digits, or `"pn"`.
+- **Extension:** extracted from the current textarea value using `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if no extension found. Appended after `"jd"` outside the hyphen-join.
+- **`slugify()` helper:** inner function — lowercases, collapses non-alphanumeric sequences to single hyphens, strips leading/trailing hyphens. Applied to position title only.
+- **Empty-field safety:** `filter(Boolean)` drops empty segments; `.replace(/-{2,}/g, "-")` collapses consecutive hyphens.
+- **Files changed:** `src/editor.js` — `autoRenameButtonFactory` guard and click handler only; no CSS or HTML changes required.
 
 ### 2026-03-25: Retry-with-lock for `name` attribute (File Name column)
 
@@ -1878,7 +1919,7 @@ Suppresses false VS Code editor diagnostics caused by `%keyword%` expressions:
 7. **Never format Squiz template files** — `row-template.html`, `server-functions.html` are in `.prettierignore` for a reason. Formatting them will corrupt `%keyword^modifier:param%` expressions.
 8. **File assets use `title`, not `short_name`** — never hardcode `data-attributename="short_name"` unconditionally in the row template. Always use the `%asset_type_code%` conditional (see _File asset vs. page asset attributes_) so file-type assets receive the correct attribute name.
 9. **`e.stopPropagation()` is required on inline edit buttons** — Cancel and Save buttons are children of the clickable `.edit_area` div. Without `stopPropagation`, clicks bubble to the parent and immediately re-open the editor.
-10. **The Auto button is only injected via `makeEditable`'s `extraButtonsFactory` param** — `autoRenameButtonFactory` returns `null` for any `data-attributename` other than `"title"` or `"short_name"`. If you add a new attribute-editor cell type and do not want the Auto button, ensure its `data-attributename` is neither of those values, or add an explicit `null` guard inside the factory.
+10. **The Auto button is only injected via `makeEditable`'s `extraButtonsFactory` param** — `autoRenameButtonFactory` handles `"name"`, `"title"`, and `"short_name"`; it returns `null` for any other `data-attributename`. If you add a new attribute-editor cell type and do not want the Auto button, ensure its `data-attributename` is none of those three values, or add an explicit early return inside the factory.
 11. **The `name` attribute requires explicit locking** — Unlike `title`/`short_name`, the `name` attribute lives on the Squiz "details" screen, which does not auto-lock on production. `submitAttr()` handles this with `acquireLock`/`releaseLock` when `attrName === "name"`. If a new system attribute from the "details" screen needs editing in future, follow the same pattern.
 
 ---
