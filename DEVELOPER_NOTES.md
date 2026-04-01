@@ -113,7 +113,7 @@ Key points for future developers:
   | `[WoG]` (no agency checked)    | → `DOE`             | `[WoG]`         |
   | `[WoG, DET]`                   | → _(blank)_         | `[WoG]`         |
 
-  Rule: preserve WoG if it was checked; include new agency only if any non-WoG value was previously checked. Serialised as `";"` joined (e.g. `"WoG;DOE"`).
+  Rule: preserve WoG if it was checked; include new agency only if any non-WoG value was previously checked. Serialised as `"; "` joined (e.g. `"WoG; DOE"`).
 
 - **Advertise** uses the checkbox multiselect popup (`.multiselect-dropdown`). When it opens, the handler reads the row's current Agency `<select>` value and renders checkboxes **only** for `WoG` plus that agency code (or `WoG` only when Agency is blank). NTG Central (WoG) is **not** force-checked — the user can uncheck it freely before saving.
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
@@ -930,7 +930,7 @@ All paths ultimately call:
 submit(value, assetid, fieldid);
 ```
 
-- `value` for multi-select fields is a **semicolon-delimited string** (e.g. `"AO2; SP1"` with a space after the semicolon, as produced by `Array.join("; ")`). The Squiz Matrix API rejects arrays. Note: the Agency–Advertise sync path joins with `";"` (no space) — both forms are accepted by the server.
+- `value` for multi-select fields is a **semicolon-delimited string** (e.g. `"AO2; SP1"` with a space after the semicolon, as produced by `Array.join("; ")`). The Squiz Matrix API rejects arrays. The Agency–Advertise sync path also uses `"; "` — all multi-select values are consistently joined with a space.
 - Single-select and free-text fields pass a plain string.
 - Date fields pass ISO format `YYYY-MM-DD`.
 
@@ -1645,6 +1645,12 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 - **`slugify()` helper:** inner function — lowercases, collapses non-alphanumeric sequences to single hyphens, strips leading/trailing hyphens. Applied to position title only.
 - **Empty-field safety:** `filter(Boolean)` drops empty segments; `.replace(/-{2,}/g, "-")` collapses consecutive hyphens.
 - **Files changed:** `src/editor.js` — `autoRenameButtonFactory` guard and click handler only; no CSS or HTML changes required.
+
+### 2026-04-01: Advertise sync separator changed to `"; "`
+
+- **Problem:** The Agency–Advertise sync path serialised values with `";"` (no space), inconsistent with the `"; "` separator used by all other multi-select save handlers.
+- **Solution:** Changed `advertiseVals.join(";")` to `advertiseVals.join("; ")` in the agency save handler.
+- **Files changed:** `src/editor.js` — line 359, `advertiseVals.join()`.
 
 ### 2026-04-01: Agency save now syncs advertise field to backend
 

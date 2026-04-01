@@ -356,7 +356,7 @@
               var advertiseVals = [];
               if (hasWoG) advertiseVals.push("WoG");
               if (newVal && hadAgency) advertiseVals.push(newVal);
-              var advertiseStr = advertiseVals.join(";");
+              var advertiseStr = advertiseVals.join("; ");
               $advertiseSelect.val(advertiseVals);
               var $advertiseDisplay = $advertiseSelect.prev(
                 ".metadata_option_display",
