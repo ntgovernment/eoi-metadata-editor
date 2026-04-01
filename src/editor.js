@@ -88,6 +88,13 @@
     };
     initEditableCells();
 
+    // Make the save-result toast accessible to screen readers
+    $(".results").attr({
+      role: "alert",
+      "aria-live": "assertive",
+      "aria-atomic": "true",
+    });
+
     // Helper: Attach focus trap to editing UI so Tab/Shift+Tab exits edit mode
     var attachFocusTrap = function (
       $editContainer,
@@ -332,20 +339,31 @@
         } else {
           // Metadata field (e.g., Agency, Designation)
           submit(newVal, assetid, fieldid);
-          // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
-          var $row = $select.closest("tr");
-          var $advertiseSelect = $row.find(
-            'select.metadata_options[data-metadatafieldid="446182"]',
-          );
-          if ($advertiseSelect.length) {
-            var advertiseVals = newVal ? ["WoG", newVal] : ["WoG"];
-            var advertiseStr = advertiseVals.join(";");
-            $advertiseSelect.val(advertiseVals);
-            var $advertiseDisplay = $advertiseSelect.prev(
-              ".metadata_option_display",
+          // Sync advertise (field 446182) when Agency (445640) changes:
+          // update as if the advertise multiselect were opened for the new agency
+          // and saved unchanged — preserve WoG state, replace old agency with new.
+          if (fieldid === "445640") {
+            var $row = $select.closest("tr");
+            var $advertiseSelect = $row.find(
+              'select.metadata_options[data-metadatafieldid="446182"]',
             );
-            $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
-            submit(advertiseStr, assetid, "446182");
+            if ($advertiseSelect.length) {
+              var currentVals = $advertiseSelect.val() || [];
+              var hasWoG = currentVals.indexOf("WoG") !== -1;
+              var hadAgency = currentVals.some(function (v) {
+                return v !== "WoG";
+              });
+              var advertiseVals = [];
+              if (hasWoG) advertiseVals.push("WoG");
+              if (newVal && hadAgency) advertiseVals.push(newVal);
+              var advertiseStr = advertiseVals.join(";");
+              $advertiseSelect.val(advertiseVals);
+              var $advertiseDisplay = $advertiseSelect.prev(
+                ".metadata_option_display",
+              );
+              $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
+              submit(advertiseStr, assetid, "446182");
+            }
           }
         }
       },
