@@ -13,6 +13,12 @@
   z-index: 100;
 }
 
+.alert-error {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+
 .edit_area,
 .metadata_option_display {
   position: relative;

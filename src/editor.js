@@ -88,6 +88,13 @@
     };
     initEditableCells();
 
+    // Make the save-result toast accessible to screen readers
+    $(".results").attr({
+      role: "alert",
+      "aria-live": "assertive",
+      "aria-atomic": "true",
+    });
+
     // Helper: Attach focus trap to editing UI so Tab/Shift+Tab exits edit mode
     var attachFocusTrap = function (
       $editContainer,
@@ -332,20 +339,31 @@
         } else {
           // Metadata field (e.g., Agency, Designation)
           submit(newVal, assetid, fieldid);
-          // Sync advertise (field 446182): update to WoG + new Agency (or WoG only)
-          var $row = $select.closest("tr");
-          var $advertiseSelect = $row.find(
-            'select.metadata_options[data-metadatafieldid="446182"]',
-          );
-          if ($advertiseSelect.length) {
-            var advertiseVals = newVal ? ["WoG", newVal] : ["WoG"];
-            var advertiseStr = advertiseVals.join(";");
-            $advertiseSelect.val(advertiseVals);
-            var $advertiseDisplay = $advertiseSelect.prev(
-              ".metadata_option_display",
+          // Sync advertise (field 446182) when Agency (445640) changes:
+          // update as if the advertise multiselect were opened for the new agency
+          // and saved unchanged — preserve WoG state, replace old agency with new.
+          if (fieldid === "445640") {
+            var $row = $select.closest("tr");
+            var $advertiseSelect = $row.find(
+              'select.metadata_options[data-metadatafieldid="446182"]',
             );
-            $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
-            submit(advertiseStr, assetid, "446182");
+            if ($advertiseSelect.length) {
+              var currentVals = $advertiseSelect.val() || [];
+              var hasWoG = currentVals.indexOf("WoG") !== -1;
+              var hadAgency = currentVals.some(function (v) {
+                return v !== "WoG";
+              });
+              var advertiseVals = [];
+              if (hasWoG) advertiseVals.push("WoG");
+              if (newVal && hadAgency) advertiseVals.push(newVal);
+              var advertiseStr = advertiseVals.join("; ");
+              $advertiseSelect.val(advertiseVals);
+              var $advertiseDisplay = $advertiseSelect.prev(
+                ".metadata_option_display",
+              );
+              $advertiseDisplay.text(getOptionDisplayText($advertiseSelect));
+              submit(advertiseStr, assetid, "446182");
+            }
           }
         }
       },
@@ -631,6 +649,9 @@
         field_id: fieldid,
         field_val: content,
         dataCallback: result,
+        errorCallback: function () {
+          displayResult("Save failed \u2014 please try again.", "error");
+        },
       });
     }
 
@@ -718,21 +739,29 @@
       if (!data.changes || !data.changes[0]) return;
       var updatedData = data.changes[0];
 
-      var $cell = $('tr[id="' + updatedData.assetid + '"]').find(
+      // Look up the row directly by asset ID so that multiselect fields
+      // (which have no .edit_area, only a .metadata_option_display) still
+      // get their DataTables cache invalidated correctly.
+      var $row = $('tr[id="' + updatedData.assetid + '"]');
+      if (!$row.length) return;
+
+      // For plain-text and date fields, also update the visible cell text.
+      var $cell = $row.find(
         '.edit_area[data-metadatafieldid="' + updatedData.fieldid + '"]',
       );
-
-      // Check if this is a datepicker field
-      if ($cell.attr("data-datepicker") === "true") {
-        // Convert ISO date to Australian format
-        var displayValue = isoToAustralian(updatedData.value);
-        $cell.text(displayValue);
-      } else {
-        $cell.text(updatedData.value);
+      if ($cell.length) {
+        // Check if this is a datepicker field
+        if ($cell.attr("data-datepicker") === "true") {
+          // Convert ISO date to Australian format
+          var displayValue = isoToAustralian(updatedData.value);
+          $cell.text(displayValue);
+        } else {
+          $cell.text(updatedData.value);
+        }
       }
 
       if (dtTable) {
-        dtTable.row($cell.closest("tr")[0]).invalidate("dom").draw(false);
+        dtTable.row($row[0]).invalidate("dom").draw(false);
       }
 
       return;

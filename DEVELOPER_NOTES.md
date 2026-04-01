@@ -18,7 +18,7 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 - [Metadata & Attribute Field Reference](#metadata-field-id-reference)
 - [DataTables Integration](#datatables-integration-march-2026) — init config, render functions, row invalidation, column filters
 - [Interaction Behaviour & Editing Guidelines](#interaction-behaviour-and-editing-guidelines) — makeEditable, datepicker, dropdowns
-- [Accessibility](#accessibility-and-interaction-behaviour) — keyboard nav, focus traps
+- [Accessibility](#accessibility-and-interaction-behaviour) — keyboard nav, focus traps, save-result toast
 - [Hover Edit Tooltip](#hover-edit-tooltip)
 - [Status Column Colour System](#status-column-colour-system)
 - [Agency–Advertise Cross-Field Rule](#agency-and-advertise-behaviour-2026-updates)
@@ -62,6 +62,8 @@ Changes to interaction logic are made in `src/editor.js`, then deployed to the N
 | `package.json`                                       | npm scripts — `dev` starts Vite                                        | Yes                                 |
 | `.prettierignore`                                    | Prevents Prettier from corrupting Squiz `%keyword%` syntax             | Yes                                 |
 | `.vscode/settings.json`                              | Suppresses false VS Code HTML/JS errors in Squiz template files        | Yes                                 |
+| `.github/prompts/update-docs.prompt.md`              | Copilot `/update-docs` prompt — instructions for updating all docs     | Yes                                 |
+| `.github/prompts/deploy-to-dev.prompt.md`            | Copilot `/deploy-to-dev` prompt — stage, commit, push to `origin dev`  | Yes                                 |
 
 > **Rule:** Edit `row-template.html` and `server-functions.html` for template/field changes, and `editor.js` for interaction changes. Never modify `update-metadata.js`. The saved HTML page is re-fetched from production when rows change; apply the sanitisation checklist below after every refresh.
 
@@ -97,11 +99,22 @@ Opens `http://localhost:5173/EOI%20metadata%20editor%20_%20NTG%20Central.html` i
 
 ## Agency and advertise behaviour (2026 updates)
 
-A special rule was introduced in March 2026: when a user saves a new Agency selection (`job.agency`, field ID `445640`), the Advertise field (`job.advertise`, field ID `446182`) is automatically recalculated and saved as `WoG;{agencyCode}` (or just `WoG` when Agency is blank). The linkage is implemented client-side in `editor.js` using the hardcoded field ID strings `"445640"` and `"446182"` — there are no named constants.
+A special rule was introduced in March 2026: when a user saves a new Agency selection (`job.agency`, field ID `445640`), the Advertise field (`job.advertise`, field ID `446182`) is automatically recalculated and saved **as if the user had opened the Advertise multiselect for the new agency and clicked Save without changing anything**. This preserves the user's WoG checkbox state and replaces the old agency code with the new one. The linkage is implemented client-side in `editor.js` using the hardcoded field ID strings `"445640"` and `"446182"` — there are no named constants.
 
 Key points for future developers:
 
-- **Agency** uses the single-select dropdown popup (`.single-dropdown` — see _Edit control types_ in Architecture). The user opens it by clicking the display label, chooses from a native `<select>`, then clicks Save. The `.single-dropdown-actions [data-action='save']` handler calls `submit()` for Agency and then immediately derives `advertiseVals = newVal ? ["WoG", newVal] : ["WoG"]`, updates the Advertise `<select>` and its display label, and calls `submit()` for Advertise as well. There is no passive `change` listener.
+- **Agency** uses the single-select dropdown popup (`.single-dropdown` — see _Edit control types_ in Architecture). The user opens it by clicking the display label, chooses from a native `<select>`, then clicks Save. The `.single-dropdown-actions [data-action='save']` handler calls `submit()` for Agency and then, because `fieldid === "445640"`, reads the current Advertise selections, preserves WoG if it was checked, adds the new agency code if any agency was previously checked, and **immediately calls `submit()` for Advertise** — saving both fields to the backend at the same time. There is no passive `change` listener.
+- **Advertise sync logic** — derived from the current advertise selections at the time the agency is saved:
+
+  | Advertise before agency change | New agency selected | Advertise saved |
+  | ------------------------------ | ------------------- | --------------- |
+  | `[WoG, DET]`                   | → `DOE`             | `[WoG, DOE]`    |
+  | `[DET]` (WoG unchecked)        | → `DOE`             | `[DOE]`         |
+  | `[WoG]` (no agency checked)    | → `DOE`             | `[WoG]`         |
+  | `[WoG, DET]`                   | → _(blank)_         | `[WoG]`         |
+
+  Rule: preserve WoG if it was checked; include new agency only if any non-WoG value was previously checked. Serialised as `"; "` joined (e.g. `"WoG; DOE"`).
+
 - **Advertise** uses the checkbox multiselect popup (`.multiselect-dropdown`). When it opens, the handler reads the row's current Agency `<select>` value and renders checkboxes **only** for `WoG` plus that agency code (or `WoG` only when Agency is blank). NTG Central (WoG) is **not** force-checked — the user can uncheck it freely before saving.
 - There is **no page-load normalization** of the Advertise field. Rows with extra agency codes in their saved advertise value will continue showing them until an Agency save triggers a resync.
 - To add a new cross-field rule, follow the same pattern in `.single-dropdown-actions [data-action='save']`: after `submit(newVal, assetid, fieldid)`, derive the dependent value and call `submit(derivedVal, assetid, dependentFieldId)`, then update that field's hidden `<select>` and its `.metadata_option_display` text via `getOptionDisplayText`.
@@ -116,13 +129,13 @@ Both the **File Name** cell (`data-attributename="name"`) and the **Document Tit
 <PREFIX> <DESIG-KEYS> <Position Title> <AGENCY> JD
 ```
 
-| Part             | Source                                      | Notes                                                                               |
-| ---------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)                         |
-| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)                         |
-| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()`           |
-| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                                 |
-| Suffix           | Literal `"JD"`                              | Always appended                                                                     |
+| Part             | Source                                      | Notes                                                                     |
+| ---------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| Prefix           | File Name cell text — **display text only** | See prefix logic below (uppercase: `SUPN`, digits, or `PN`)               |
+| Designation keys | `select[data-metadatafieldid="445634"]`     | `.val()` array → uppercase → hyphen-joined (e.g. `SP1-SP2`)               |
+| Position title   | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if that cell is in edit mode, otherwise `.text()` |
+| Agency key       | `select[data-metadatafieldid="445640"]`     | `.val()` → uppercased (e.g. `DCDD`)                                       |
+| Suffix           | Literal `"JD"`                              | Always appended                                                           |
 
 **Example:** `30689 SP1-SP2 Senior Practice Leader - Central DCDD JD`
 
@@ -134,14 +147,14 @@ Parts joined with **spaces**; empty segments filtered; double-spaces collapsed.
 <prefix>-<desig-keys>-<position-title-slug>-<agency>-jd.<ext>
 ```
 
-| Part                 | Source                                      | Notes                                                                               |
-| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Prefix               | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                         |
-| Designation keys     | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                        |
-| Position title slug  | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`          |
-| Agency key           | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                                 |
-| Suffix               | Literal `"jd"`                              | Always appended before extension                                                    |
-| Extension            | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found      |
+| Part                | Source                                      | Notes                                                                         |
+| ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| Prefix              | Current filename in textarea                | See prefix logic below (lowercase: `supn`, digits, or `pn`)                   |
+| Designation keys    | `select[data-metadatafieldid="445634"]`     | `.val()` array → lowercased → hyphen-joined (e.g. `sp1-sp2`)                  |
+| Position title slug | `.edit_area[data-metadatafieldid="445504"]` | Reads textarea `.val()` if in edit mode, otherwise `.text()` → `slugify()`    |
+| Agency key          | `select[data-metadatafieldid="445640"]`     | `.val()` → lowercased (e.g. `dcdd`)                                           |
+| Suffix              | Literal `"jd"`                              | Always appended before extension                                              |
+| Extension           | Current filename in textarea                | Extracted with `/(\.[ a-zA-Z0-9]+)$/`; lowercased; empty string if none found |
 
 **Example:** `30689-sp1-sp2-senior-practice-leader-central-dcdd-jd.docx`
 
@@ -153,10 +166,10 @@ Parts joined with **hyphens**; empty segments filtered; consecutive hyphens coll
 
 Applied identically for both cell types, using different source text and casing:
 
-| Cell         | Source text                       | SUPN match → | Digit match → | Fallback → |
-|---|---|---|---|---|
-| Document Title | File Name **display text**       | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"` |
-| File Name      | Current **textarea value**       | `"supn"`     | digits (e.g. `"30689"`) | `"pn"` |
+| Cell           | Source text                | SUPN match → | Digit match →           | Fallback → |
+| -------------- | -------------------------- | ------------ | ----------------------- | ---------- |
+| Document Title | File Name **display text** | `"SUPN"`     | digits (e.g. `"30689"`) | `"PN"`     |
+| File Name      | Current **textarea value** | `"supn"`     | digits (e.g. `"30689"`) | `"pn"`     |
 
 1. If source text matches `/supn|supernumerary/i` → use SUPN prefix (highest priority)
 2. Else if source text matches `/(?:\d{3,})/` → use the matched digit string
@@ -275,6 +288,30 @@ A major 2026 update added **full keyboard accessibility** to every editable cell
 - All dynamically created controls (textarea, save/cancel buttons, `<select>`, checkboxes, datepicker input) support standard focus outlines, so keyboard users can track focus during editing.
 
 The implementation lives entirely in `src/editor.js` around the existing `makeEditable()` function and the dropdown/date logic. Any new field type should follow the same accessibility pattern: use `activateEdit()` helpers, call `attachFocusTrap()` if the UI has multiple focusable elements, and ensure focus returns to the origin cell on close.
+
+### Save-result toast accessibility
+
+The fixed-position `.results` toast (`<div class="results alert">`) displays success or error messages after every save. It is made accessible as follows:
+
+- **ARIA attributes** — `role="alert"`, `aria-live="assertive"`, and `aria-atomic="true"` are set on `.results` by `editor.js` at DOM-ready (not hardcoded in the HTML, so they survive production re-saves). This causes screen readers to announce the message as soon as the element becomes visible.
+- **Error styling** — The class `alert-error` is toggled by `displayResult()` / `displayResultAttr()` on failure. Bootstrap does not define `.alert-error` (it uses `.alert-danger`), so a custom rule in `eoi-metadata-editor.css` provides the colours:
+  ```css
+  .alert-error {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+  }
+  ```
+  These values match Bootstrap's `.alert-danger` palette and meet WCAG AA contrast requirements (`#721c24` on `#f8d7da` ≈ 6.0:1).
+- **Success styling** — The class `alert-success` is a standard Bootstrap class (`color: #155724; background-color: #d4edda`); no custom CSS is needed.
+- **Auto-dismiss** — Both functions fade out the toast after 3 seconds via `setTimeout` → `$.fadeOut()`.
+
+**Implementation detail:** The ARIA attributes are applied in JS (not in the HTML source) because the HTML page is periodically re-saved from production and sanitised. Any attributes added directly to the HTML would be lost on the next re-save.
+
+**Files:**
+
+- `src/editor.js` — `displayResult()` (~line 741), `displayResultAttr()` (~line 988), ARIA setup (~line 92)
+- `src/eoi-metadata-editor.css` — `.results` block (~line 5), `.alert-error` block (~line 16)
 
 ## Status column colour system
 
@@ -677,11 +714,13 @@ Use this sequence for most changes to avoid regressions:
 | Changes not appearing in search / sort after edit   | Verify post-save callback calls `dtTable.row(tr).invalidate('dom').draw(false)`; see Row Invalidation in DataTables section                                        |
 | Pagination controls not appearing                   | Verify DataTables initialization; check browser console for JS errors during `$('#myTable').DataTable({...})`                                                      |
 | Filtering / global search not working               | Verify `searching: true` in DataTables config; test by typing in the search box above the table                                                                    |
-| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                        |
-| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic      |
-| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                                 |
-| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                       |
-| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                  |
+| Auto button missing on Document Title or File Name  | Check `data-attributename` is `"title"`, `"short_name"`, or `"name"`; all other attribute names return `null` from `autoRenameButtonFactory`                       |
+| Auto button generates wrong prefix (Title)          | Prefix is read from the **File Name display text** — check that cell's text contains the position number or SUPN keyword; see _Auto Rename button_ prefix logic    |
+| Auto button generates wrong prefix (File Name)      | Prefix is read from the **current textarea value** (existing filename) — check it contains the expected digits or SUPN/supernumerary                               |
+| Auto button produces double spaces (Title)          | An empty segment (designation or agency); `filter(Boolean)` should prevent this — check `select.val()` returns on field IDs 445634 and 445640                      |
+| Auto button produces double hyphens (File Name)     | An empty segment or `slugify()` returning empty — check `select.val()` returns and that position title is non-empty                                                |
+| Error toast has no background colour                | `.alert-error` CSS rule missing or overridden; check `src/eoi-metadata-editor.css`. Bootstrap only defines `.alert-danger`, not `.alert-error`                     |
+| Save toast not announced by screen reader           | ARIA attributes missing on `.results` div; check `editor.js` DOM-ready block sets `role="alert"`, `aria-live="assertive"`, `aria-atomic="true"`                    |
 
 ---
 
@@ -748,6 +787,14 @@ Metadata fields are wrapped in `<td class="metadata-editor">`. There are two fie
 - `multiple=""`: present on multi-select fields; absent on single-select fields
 
 Attribute fields (asset name, short name) use `<td class="attribute-editor">` with a `data-attributename` attribute, updated via `js_api.setAttribute`.
+
+**Save-result toast** — a fixed-position notification that appears after every save or error:
+
+```html
+<div class="results alert"></div>
+```
+
+This element is positioned at the bottom-right of the viewport (CSS in `eoi-metadata-editor.css`). It is hidden by default (`display: none`) and shown/hidden by `displayResult()` and `displayResultAttr()` in `editor.js`. The JS toggles between `alert-success` (Bootstrap built-in) and `alert-error` (custom rule in `eoi-metadata-editor.css`) classes depending on the save outcome. ARIA attributes (`role="alert"`, `aria-live="assertive"`, `aria-atomic="true"`) are applied by `editor.js` at DOM-ready so screen readers announce the message immediately when it appears.
 
 ### jQuery triple-load problem
 
@@ -883,7 +930,7 @@ All paths ultimately call:
 submit(value, assetid, fieldid);
 ```
 
-- `value` for multi-select fields is a **semicolon-delimited string** (e.g. `"AO2; SP1"` with a space after the semicolon, as produced by `Array.join("; ")`). The Squiz Matrix API rejects arrays. Note: the Agency–Advertise sync path joins with `";"` (no space) — both forms are accepted by the server.
+- `value` for multi-select fields is a **semicolon-delimited string** (e.g. `"AO2; SP1"` with a space after the semicolon, as produced by `Array.join("; ")`). The Squiz Matrix API rejects arrays. The Agency–Advertise sync path also uses `"; "` — all multi-select values are consistently joined with a space.
 - Single-select and free-text fields pass a plain string.
 - Date fields pass ISO format `YYYY-MM-DD`.
 
@@ -1598,6 +1645,31 @@ $existing.attr("data-label", $select.attr("data-label") || "");
 - **`slugify()` helper:** inner function — lowercases, collapses non-alphanumeric sequences to single hyphens, strips leading/trailing hyphens. Applied to position title only.
 - **Empty-field safety:** `filter(Boolean)` drops empty segments; `.replace(/-{2,}/g, "-")` collapses consecutive hyphens.
 - **Files changed:** `src/editor.js` — `autoRenameButtonFactory` guard and click handler only; no CSS or HTML changes required.
+
+### 2026-04-01: Advertise sync separator changed to `"; "`
+
+- **Problem:** The Agency–Advertise sync path serialised values with `";"` (no space), inconsistent with the `"; "` separator used by all other multi-select save handlers.
+- **Solution:** Changed `advertiseVals.join(";")` to `advertiseVals.join("; ")` in the agency save handler.
+- **Files changed:** `src/editor.js` — line 359, `advertiseVals.join()`.
+
+### 2026-04-01: Agency save now syncs advertise field to backend
+
+- **Problem:** When agency was changed, the "where to advertise" display updated correctly in the table but nothing was written to the metadata backend — users had to manually open and save the "where to advertise" column as a second step.
+- **Solution:** The `.single-dropdown-actions [data-action='save']` handler in `editor.js` now: (1) reads the current advertise `<select>` value, (2) derives new selections preserving WoG state and replacing the old agency code with the new one, (3) updates the display label, and (4) calls `submit()` for advertise (field 446182) immediately. A `fieldid === "445640"` guard ensures the sync only runs for the Agency field. Previous behaviour always forced `["WoG", newVal]` regardless of WoG state.
+- **Files changed:** `src/editor.js` — agency save handler in `$(document).on("click", ".single-dropdown-actions [data-action='save']")`.
+
+### 2026-04-01: Copilot prompts added
+
+- **Added:** `.github/prompts/update-docs.prompt.md` — `/update-docs` slash command that guides the agent through updating DEVELOPER_NOTES.md, repo memory, and prompt files after any code change.
+- **Added:** `.github/prompts/deploy-to-dev.prompt.md` — `/deploy-to-dev` slash command that stages all changes, generates a session-summary commit message, and pushes to `origin dev`.
+- **Files changed:** `.github/prompts/update-docs.prompt.md` (new), `.github/prompts/deploy-to-dev.prompt.md` (new).
+
+### 2026-03-25: Save-result toast — error colours and screen-reader accessibility
+
+- **Problem:** The save-result toast (`.results` div) used class `.alert-error` for failures, but Bootstrap only defines `.alert-danger` — so error messages appeared with no background or text colour, making them hard to notice and inaccessible.
+- **CSS fix (`src/eoi-metadata-editor.css`):** Added `.alert-error` rule with `color: #721c24`, `background-color: #f8d7da`, `border-color: #f5c6cb` — matching Bootstrap's danger palette, WCAG AA compliant.
+- **ARIA fix (`src/editor.js`):** At DOM-ready, set `role="alert"`, `aria-live="assertive"`, `aria-atomic="true"` on `.results` so screen readers announce save results immediately. Applied via JS (not HTML) so the attributes survive production re-saves.
+- **Files changed:** `src/eoi-metadata-editor.css` (new `.alert-error` block), `src/editor.js` (ARIA setup in DOM-ready initialiser).
 
 ### 2026-03-25: Retry-with-lock for `name` attribute (File Name column)
 
