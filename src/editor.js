@@ -563,7 +563,9 @@
         orientation: "bottom auto",
         container: "body",
       });
-
+      
+      const date = $input.datepicker("getDate");
+      
       $input.datepicker("show");
       // Set focus after datepicker initializes
       setTimeout(function () {
@@ -594,7 +596,7 @@
         e.stopPropagation();
         // Use picker-selected date if available, otherwise parse typed value
         var displayDate = selectedDisplayDate || $input.val().trim();
-        var isoDate = selectedIsoDate || australianToIso(displayDate);
+        var isoDate = (selectedIsoDate || australianToIso(displayDate)).split(' ')[0] + ' 23:45:00';
         var assetid = $field.closest("tr").attr("id");
         var fieldid = $field.attr("data-metadatafieldid");
         $input.datepicker("destroy");
