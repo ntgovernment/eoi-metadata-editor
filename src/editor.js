@@ -506,7 +506,7 @@
          * Special case - rtfid also changed the link_url
          */
         if ($el.is('[data-link-url]')) {
-          $el.attr('data-attributename', 'rtfid');
+          $el.attr('data-attributename', 'link_url');
           const url = new URL($el[0].dataset.linkUrl ?? 'https://jobs.nt.gov.au/Home/JobDetails');
           searchParams.rtfid = value;
           transaction = {
