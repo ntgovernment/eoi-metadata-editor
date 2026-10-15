@@ -508,11 +508,10 @@
         if ($el.is('[data-link-url]')) {
           $el.attr('data-attributename', 'link_url');
           const url = new URL($el[0].dataset.linkUrl ?? 'https://jobs.nt.gov.au/Home/JobDetails');
-          url.searchParams.rtfid = value;
           transaction = {
             attrName: 'link_url',
-            attrValue: url.toString(),
-            assetid: $el.closest("tr").attr("id")
+            attrValue: url.href.replace(url.search, "") + "?rtfid=" + value,
+            assetid: assetid
           };
           $el.attr("data-newvalue", value).addClass("pending");
           submitAttr(transaction);
