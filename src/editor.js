@@ -501,6 +501,22 @@
         var assetid = $el.closest("tr").attr("id");
         var fieldid = $el.attr("data-metadatafieldid");
         submit(value, assetid, fieldid);
+
+        /**
+         * Special case - rtfid also changed the link_url
+         */
+        if ($el.is('[data-link-url]')) {
+          $el.attr('data-attributename', 'rtfid');
+          const url = new URL($el[0].dataset.linkUrl ?? 'https://jobs.nt.gov.au/Home/JobDetails');
+          searchParams.rtfid = value;
+          transaction = {
+            attrName: 'link_url',
+            attrValue: url.toString(),
+            assetid: $el.closest("tr").attr("id")
+          };
+          $el.attr("data-newvalue", value).addClass("pending");
+          submitAttr(transaction);
+        }
       },
     );
 
@@ -563,8 +579,6 @@
         orientation: "bottom auto",
         container: "body",
       });
-      
-      const date = $input.datepicker("getDate");
       
       $input.datepicker("show");
       // Set focus after datepicker initializes
